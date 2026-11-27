@@ -185,6 +185,75 @@ but can give the GPU the same memory:
 - Limits: heaps opened from a file mapping are system-memory (CPU-visible) heaps read over PCIe; textures in them
   are restricted to row-major layouts, so tiled console textures need a copy into a default heap.
 
+### What the GPU pays for system memory
+
+One compute dispatch of 67 million 4-byte accesses to a 256 MiB buffer on an RTX 4090 (driver 32.0.16.2124), GPU ms
+by timestamp queries, nothing else on the GPU (a scratch program, not in the repository):
+
+| Buffer in | load, in order | load, random | load, random in 1 MiB | store, random | atomic add, random |
+|---|---|---|---|---|---|
+| imported VirtualAlloc memory or section view (the heaps above) | 22 | 224 | 131 | 242 to 274 | 283 to 321 |
+| driver heap in system memory (CUSTOM, L0) | 17 | 222 | 1.1 | 241 | 274 |
+| video memory, DEFAULT or GPU_UPLOAD (through the BAR) | 0.3 | 8 | 0.8 | 9 | 18 |
+
+Video memory is 25 to 280 times faster at first reads, stores and atomics. Memory the driver owns is cached by the
+GPU once read, imported memory is not; so the loader's own tables (the descriptor window, the address map, the
+user-data ring: driver heaps) gain little from video memory: `--gpu-upload-heaps` gave 204 against 212 ms of GPU
+work a frame in the same cutscene (w324, w323; samples vary by 3 %). The CPU writes a GPU_UPLOAD mapping at
+21 GB/s and reads it at 14 MB/s. lane-drvheap holds the full table and a prototype that allocates the game's
+graphics heaps as driver heaps (not booting yet).
+
+What is left is the game's memory the GPU reads for the first time each frame: geometry and streamed data in the
+6.1 GiB pool and constants in the GPU pool, all imported. The frame's GPU work (240 ms of queue #1 in the world) is
+led by the G-buffer and shadow mesh-shader draws, which read them through the address map.
+
+### Video memory images of game memory (design notes)
+
+`--gpu-memory-vram` (branch lane-vram, parked) was not faster for two reasons its logs show:
+
+- It images little of what is read. It moves slot-133 buffers of 1 MiB or more on XMem pages: 21 to 32 buffers,
+  162 to 379 MiB (w154 to w166). The 480 to 540 buffers in the game's graphics heap (457 to 592 MiB), the pool
+  the address map reads for mesh shaders and every address a program computes stay in system memory.
+- Where the game says the GPU may write (PAGE_GRAPHICS_READWRITE, nearly all of it), nothing tells which pages
+  the GPU did write, so any CPU access to such a page brings 512 KiB down after waiting for every queue: 36,835 MiB
+  read back and 113,775 ms waited in w166. An earlier form compared instead (w154: 271,640 ms syncing).
+
+VIctory (PR #3102, GPL-3.0; facts from its code and docs) images title buffers in GPU upload heaps:
+
+- **CPU writes:** pages are made read-only (64 KiB units) and a vectored handler marks them; write watch only
+  tells which pools are tracked. Writes by the kernel and the runtime (file reads, DirectStorage) are reported by
+  hand. A page mapped at several addresses is guarded at each, and a write at one marks every copy. A submission
+  refreshes the ranges it binds, and for programs with computed addresses every copy its page table names.
+- **GPU writes:** translated programs set a bit per 64 KiB page at every store through a view (write marks); after
+  the submission only marked pages come back from video memory (one GPU copy into a system-memory mirror, 0.05 ms
+  plus the bytes) and are compared with title memory. Ranges written without marks are snapshot before and
+  compared after, which costs more than it saves when large.
+- **Measured** (RTX 5070 Ti, synthetic submissions; no figure from a real frame is published): GPU time 44 to
+  16 ms with read-only copies in video memory and to 11 ms with written ones too, of which 9 ms is marking,
+  because the mark bitmap sits in system memory.
+
+XCL's shadow of its coherent window (XCL_UMA_SHADOW, for GPUs without OpenExistingHeapFromAddress) uploads the CPU's
+writes found by write watch before each submission and reads GPU writes back only at Map and after the lists'
+memory writes: it does not find program stores either.
+
+For this loader:
+
+- Write watch does not apply: the pool and the GPU pool are views of sections (MEM_WRITE_WATCH is for VirtualAlloc
+  memory). Page guards do (`VramPages` on lane-vram), at every address a frame is mapped at, with DirectStorage's
+  writes through the store reported (`ObserveWrites`).
+- The game's flags prove little: of the GPU pool only the first 38 MiB are GPU read-only (0x1004, 0x1404,
+  0x8404); constants are in its 47 MiB write-combined read-write piece (0x2404), buffer-view data in the 27 MiB
+  write-combined read-only one (0x8404), and the streaming pool is all read-write.
+- So the step that makes an image pay is the same as VIctory's: **write marks from the translator** (a bit per
+  64 KiB page at every store through the address map's UAVs, in a video-memory bitmap read back with the fence).
+  With them the image of the section windows can be the GPU's only copy (SRV and UAV of each page), pages come
+  down only where marked, and CPU reads of unmarked pages need no fault. It is a FiveStar.Shaders change and
+  belongs in a translator batch.
+- Without the translator, two pieces are safe: the write-combined pieces of the GPU pool as GPU upload memory
+  mapped at the game's address (no sync at all: the game declared it does not read them; needs XMem to back a
+  reservation with a mapping that is not a section, and the address steering of lane-drvheap, not tried on a BAR
+  mapping), and images of the pages the flags make GPU read-only.
+
 The game calls the device right after mapping (vtable +0x250 with the address and page count at 0x141E6C2BB,
 +0x428 after the five pieces at 0x141E8684C); these are the hooks for registering the memory with the GPU.
 
