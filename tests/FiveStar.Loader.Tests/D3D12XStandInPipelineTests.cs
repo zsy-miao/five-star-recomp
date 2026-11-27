@@ -231,6 +231,11 @@ public sealed unsafe class D3D12XStandInPipelineTests
         try
         {
             ShaderTableGuard.Reset();
+
+            // An estimate alone (no table read, the background work not refused) warns and holds nothing.
+            ShaderTableGuard.Check(0, ShaderTableGuard.HoldMiB * MiB);
+            Assert.False(ShaderTableGuard.Holding);
+
             ShaderTableGuard.Check(ShaderTableGuard.HoldMiB * MiB, 0);
             Assert.Equal((pipeline, false), (standIns.Desktop(first, out bool pending), pending));
             Assert.Equal((0, true, 1L), (standIns.Desktop(second, out pending), pending, standIns.HeldUses));

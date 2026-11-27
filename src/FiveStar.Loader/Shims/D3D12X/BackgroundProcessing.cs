@@ -47,6 +47,9 @@ internal static unsafe class BackgroundProcessing
     /// <summary>Whether the background work is off: false when it was left on, refused, or not asked for yet.</summary>
     public static bool Off { get; private set; }
 
+    /// <summary>Whether turning the background work off was asked for and refused (Windows developer mode off).</summary>
+    public static bool Refused { get; private set; }
+
     /// <summary>Sets the mode on <paramref name="device"/>, once it is made.</summary>
     public static void Apply(nint device, LoaderLog log)
     {
@@ -82,6 +85,7 @@ internal static unsafe class BackgroundProcessing
 
         if (!DiscardOnly)
         {
+            Refused = true;
             log.Warn($"[d3d12_xs] the driver's background shader work could not be turned off: ID3D12Device6::SetBackgroundProcessingMode(DISABLE_BACKGROUND_WORK) -> {HResult.Format(hr)}{Meaning(hr)}. On an NVIDIA card the driver's recompiles then fill its shader tables (512 MiB) within minutes of play and the device is removed (DXGI_ERROR_DEVICE_REMOVED, no GPU fault). Turn on Windows developer mode (Settings > System > For developers) and start again; until then the driver's measurements are discarded every {DiscardSeconds} s, which may slow the recompiles (docs/running.md#developer-mode)");
         }
 

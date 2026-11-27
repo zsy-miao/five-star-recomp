@@ -17,6 +17,8 @@ namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
 /// lighting pipelines are never held. Below <see cref="ResumeMiB"/> first uses go on again. From
 /// <see cref="CriticalMiB"/> on, pipelines idle for a while are given up as well (<see cref="PipelineEviction.Tighten"/>):
 /// held at their next use, they stay out until there is room.
+/// Only on an NVIDIA adapter (<see cref="NvidiaVendorId"/>); and an estimate alone only warns: pipelines are held
+/// or given up when the table was read from the driver or the background work was refused.
 /// <c>--no-shader-table-guard</c> turns it off.
 /// </summary>
 internal static class ShaderTableGuard
@@ -27,6 +29,9 @@ internal static class ShaderTableGuard
     public const int ResumeMiB = 440;
     public const int CriticalMiB = 495;
     public const int RecompileFactor = 2;
+
+    /// <summary>PCI vendor id of NVIDIA.</summary>
+    public const uint NvidiaVendorId = 0x10DE;
     public const int EstimateNumerator = 3;
     public const int EstimateDenominator = 2;
 
@@ -57,7 +62,8 @@ internal static class ShaderTableGuard
     {
         var standIns = _standIns;
 
-        if (!Enabled || standIns is null || present % Every != 0)
+        // The 512 MiB tables are the NVIDIA driver's: on another vendor's adapter nothing is watched, held or logged.
+        if (!Enabled || standIns is null || present % Every != 0 || CompileBudget.VendorId != NvidiaVendorId)
         {
             return;
         }
@@ -84,8 +90,18 @@ internal static class ShaderTableGuard
             }
         }
 
+        // An estimate alone only warns: pipelines are held or given up on a table read from the driver, or when the
+        // background work was refused (the case in which boots lost the device, issue #64).
+        bool acts = table != 0 || BackgroundProcessing.Refused;
+        string then = $"From {HoldMiB} MiB on, pipelines not used so far stay stand-ins and their draws are skipped (--no-shader-table-guard turns that off)";
+
+        if (!acts)
+        {
+            then = "Nothing is held on this estimate alone (the driver's table could not be read and its background work is not known to run)";
+        }
+
         // Nearly at the cap although first uses are held (the recompiles of the pipelines in use go on): idle ones go.
-        if (size >= CriticalMiB)
+        if (acts && size >= CriticalMiB)
         {
             PipelineEviction.Tighten(dxil, _log);
         }
@@ -93,10 +109,10 @@ internal static class ShaderTableGuard
         if (size >= WarnMiB && !_warned)
         {
             _warned = true;
-            _log?.Warn($"[d3d12_xs] the driver's shader table is at about {size:F0} of 512 MiB ({source}): at 512 MiB an NVIDIA driver removes the device. From {HoldMiB} MiB on, pipelines not used so far stay stand-ins and their draws are skipped (--no-shader-table-guard turns that off)");
+            _log?.Warn($"[d3d12_xs] the driver's shader table is at about {size:F0} of 512 MiB ({source}): at 512 MiB an NVIDIA driver removes the device. {then}");
         }
 
-        if (size >= HoldMiB && Interlocked.Exchange(ref _holding, 1) == 0)
+        if (acts && size >= HoldMiB && Interlocked.Exchange(ref _holding, 1) == 0)
         {
             _log?.Warn($"[d3d12_xs] the driver's shader table is at about {size:F0} of 512 MiB ({source}): pipelines no list has set yet are held as stand-ins from now on, their draws skipped, so that the device is not removed");
         }
