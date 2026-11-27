@@ -180,6 +180,53 @@ internal static unsafe class PoolStoreTrace
     }
 
     /// <summary>
+    /// Counts, per program, the ring's entries since <paramref name="seen"/> whose address lies in the first
+    /// <paramref name="bytes"/> after one of <paramref name="starts"/> (0: unused), with the last address and value
+    /// of each; called often enough (<see cref="FourGiBLineWatch"/>, every 10 ms) the ring does not lap it.
+    /// </summary>
+    public static void Collect(ReadOnlySpan<ulong> starts, ulong bytes, Dictionary<string, (long Stores, ulong Address, uint Value)> into, ref long seen)
+    {
+        byte* header = Header();
+
+        if (header == null)
+        {
+            return;
+        }
+
+        long count = Volatile.Read(ref *(uint*)header);
+
+        if (count < seen)
+        {
+            seen = 0;
+        }
+
+        for (long n = Math.Max(seen, count - Entries); n < count; n++)
+        {
+            uint* entry = Entry(header, (uint)n);
+
+            if ((entry[HighWord] & KindMask & ~ViewKind) != 0)
+            {
+                continue;
+            }
+
+            ulong address = Address(entry);
+
+            foreach (ulong start in starts)
+            {
+                if (start != 0 && address >= start && address - start < bytes)
+                {
+                    string program = Programs.GetValueOrDefault(entry[0], $"program {entry[0]}");
+                    into[program] = (into.GetValueOrDefault(program).Stores + 1, address, entry[ValueWord]);
+
+                    break;
+                }
+            }
+        }
+
+        seen = count;
+    }
+
+    /// <summary>
     /// Logs new global stores outside range 0 (the pool): writes into the game heap, the first
     /// <see cref="PerProgram"/> of each program. Stores through a view stay inside it (the desktop view bounds them).
     /// </summary>
