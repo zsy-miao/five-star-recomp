@@ -15,8 +15,8 @@ GTA VI does not run yet. Updated 27 November 2026.
     depth copy; a depth-bounds rule replaces it). With the held scattering passes let through, the sky fills too.
     Before post-processing a frame is now a recognisable lit scene, with brightness bands 256 pixels wide and 16
     high and some black blocks.
-  - Post-processing: makes it worse. The final frame has a black sky, flat banded colour and blur; one
-    intermediate target is full of NaN and the depth-of-field passes output zero.
+  - Post-processing: the posterized rings and most of the smear are gone since a translator fix for literal
+    samplers (about 39,000 sample sites read an arbitrary sampler from the heap). Velocity infinities are open.
   - Exposure: not re-checked since lighting shades.
 - **Device loss (NVIDIA):** fixed in one 14-minute boot. The driver gave the device up inside `ExecuteCommandLists`
   when an internal shader table passed its 512 MiB maximum (no timeout, no GPU fault). A third of the table was the
@@ -36,12 +36,11 @@ GTA VI does not run yet. Updated 27 November 2026.
 | Problem | Next step |
 |---|---|
 | Lighting pass shades almost no pixels | find why its depth-equal test fails; then directional light and ambient inputs |
-| Brightness bands in the lighting | they follow the packed underwater mask the lighting reads; the water passes that write it are being replayed offline |
-| Post chain ruins the frame | the velocity target holds infinities (a divide by a zero previous-frame w); the pass after TAA that loses the sky |
+| Velocity target holds infinities | a divide by a zero previous-frame w; not traced yet |
 | Driver shader table has about 160 MiB of headroom | smaller translated shaders |
 | Hair and vehicle bodies missing from surface colour | bring back the remaining skipped skinned passes one by one |
 | GPU writes to game memory in system RAM are slow | video-memory copies; a finer address map |
-| Final frame in the prologue yard is orange, banded and covered in bars | the freeze on the PROLOGUE card is fixed; lighting inputs and exposure next |
+| Prologue yard: one orange light only, black sky, unlit strips | only the directional light reaches the lit image: ambient, sky, indirect and ray-traced terms are zero or stood in; the lighting draw leaves 16-row strips unwritten |
 | Ray tracing | not built; those passes are held and stand-ins fill some outputs |
 ![Progress](progress.svg)
 
