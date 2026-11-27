@@ -72,6 +72,48 @@ internal static unsafe class PoolStoreTrace
     /// <summary>Whether programs made on demand trace their stores.</summary>
     public static bool Enabled { get; set; }
 
+    /// <summary>
+    /// <c>--trace-stores-of &lt;text,...&gt;</c>: only the programs whose name holds one of the texts trace their stores,
+    /// made under their name plus <see cref="Suffix"/> so every other program stays warm; null traces them all.
+    /// </summary>
+    public static string? Filter { get; set; }
+
+    /// <summary>The name a traced program is made under with <see cref="Filter"/>: its own plus this.</summary>
+    public const string Suffix = ".stores";
+
+    /// <summary>Whether every program made on demand traces its stores (<c>--trace-pool-stores</c>): they have a cache identity of their own.</summary>
+    public static bool AllPrograms => Enabled && Filter is null;
+
+    /// <summary>Whether the program <paramref name="name"/> traces its stores.</summary>
+    public static bool Traces(string name)
+    {
+        return Enabled && (Filter is null || name.Contains(Suffix, StringComparison.Ordinal));
+    }
+
+    /// <summary>The extracted program a name stands for: without <see cref="Suffix"/>.</summary>
+    public static string Source(string name)
+    {
+        if (Filter is null)
+        {
+            return name;
+        }
+
+        return name.Replace(Suffix, string.Empty, StringComparison.Ordinal);
+    }
+
+    /// <summary>The index with the programs <see cref="Filter"/> names renamed (<see cref="Suffix"/>).</summary>
+    public static FiveStar.Shaders.Cache.ProgramIndex Rename(FiveStar.Shaders.Cache.ProgramIndex index)
+    {
+        if (Filter is null)
+        {
+            return index;
+        }
+
+        string[] texts = Filter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        return index.Renamed(name => texts.Any(text => name.Contains(text, StringComparison.OrdinalIgnoreCase)), Suffix);
+    }
+
     /// <summary>The define a program made on demand starts with; registers its id.</summary>
     public static string Header(string program)
     {
@@ -357,6 +399,11 @@ internal static unsafe class PoolStoreTrace
         }
 
         ulong start = TransientPoolViews.StartOf(entry[HighWord] & ~ViewKind);
+
+        if (start == 0)
+        {
+            start = LineViewScan.StartOf(entry[HighWord] & ~ViewKind);
+        }
 
         if (start == 0)
         {

@@ -22,7 +22,7 @@ internal sealed class ProgramIndexLoad
     /// <summary>Starts indexing <paramref name="folder"/>.</summary>
     public static ProgramIndexLoad Start(string folder)
     {
-        return new ProgramIndexLoad(Task.Run(() => DebugLayer.MeshProbes.Rename(ProgramIndex.Load(folder))));
+        return new ProgramIndexLoad(Task.Run(() => DebugLayer.PoolStoreTrace.Rename(DebugLayer.MeshProbes.Rename(ProgramIndex.Load(folder)))));
     }
 
     /// <summary>The index, waiting for it when it is not built yet; <paramref name="waited"/> is the time spent waiting.</summary>

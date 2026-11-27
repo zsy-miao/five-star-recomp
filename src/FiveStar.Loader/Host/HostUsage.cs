@@ -207,6 +207,10 @@ internal static class HostUsage
           --watch-hang           log the game's main state, loading-screen flags and heartbeat, and every thread's
                                  stack while the heartbeat its hang watchdog checks stands still
           --watch-movies         log the game's Bink movies: each one's state as it changes, its frame every 5 s
+          --trace-stores-of <text,...>  as --trace-pool-stores for the programs named with one of the texts only,
+                                 made under a name of their own (the others stay warm)
+          --scan-line-views      log the pipelines whose tables hold a buffer V# in the first 64 KiB after a 4 GiB line
+                                 (needs --mirror-table-records reach)
           --d3d12-trace-draws    log what the first draws bind (pipeline, targets, vertex buffers, tables) and read
                                  their render targets back
           --d3d12-trace-pipeline <text,...>  with the draw trace, also log the draws of pipelines named with any of the

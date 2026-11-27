@@ -571,6 +571,7 @@ internal sealed class LoaderHost
         Shims.D3D12X.Pipelines.SkippedPipelines.All = _options.NoDraws;
         Shims.D3D12X.Binding.DescriptorWindow.MinTableRecords = _options.MirrorTableRecords;
         Shims.D3D12X.Binding.TableReaches.Enabled = _options.MirrorTableReach;
+        Shims.D3D12X.DebugLayer.LineViewScan.Enabled = _options.ScanLineViews;
     }
 
     private void StartMemoryWatch()

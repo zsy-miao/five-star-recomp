@@ -372,6 +372,12 @@ internal sealed record HostOptions
     /// <summary>Follow the game's Bink movies: state changes and frame numbers (<c>--watch-movies</c>).</summary>
     public bool WatchMovies { get; set; }
 
+    /// <summary>Log the pipelines whose tables hold a buffer V# just past a 4 GiB line (<c>--scan-line-views</c>).</summary>
+    public bool ScanLineViews { get; set; }
+
+    /// <summary>Programs named with one of these comma-separated texts trace their stores (<c>--trace-stores-of</c>).</summary>
+    public string? TraceStoresOf { get; set; }
+
     /// <summary>Skip the rest of a recording's compute after a skipped dispatch (<c>--skip-compute-chains</c>).</summary>
     public bool SkipComputeChains { get; set; }
 

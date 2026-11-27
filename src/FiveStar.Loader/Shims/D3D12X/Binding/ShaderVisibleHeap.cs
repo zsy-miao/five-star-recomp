@@ -235,6 +235,11 @@ internal sealed unsafe class ShaderVisibleHeap
         record[RecordsDword] = buffer.Records;
         record[FormatDword] = buffer.Word3;
         MirrorOne(index);
+
+        if (DebugLayer.LineViewScan.Enabled)
+        {
+            DebugLayer.LineViewScan.Wrote(desktop, buffer.IsBuffer && buffer.Base == 0);
+        }
     }
 
     /// <summary>

@@ -79,7 +79,7 @@ internal static unsafe class MeshProbes
             return name[..^Suffix.Length];
         }
 
-        return name;
+        return PoolStoreTrace.Source(name);
     }
 
     /// <summary>A probed program's source with the probe code; its site list goes beside its DXIL in <paramref name="folder"/>.</summary>

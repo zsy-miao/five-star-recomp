@@ -192,7 +192,7 @@ internal sealed class ProgramProducer
 
         var (hlsl, source) = picked.Value;
 
-        if (DebugLayer.PoolStoreTrace.Enabled)
+        if (DebugLayer.PoolStoreTrace.Traces(name))
         {
             hlsl = DebugLayer.PoolStoreTrace.Header(name) + hlsl;
         }
@@ -267,7 +267,7 @@ internal sealed class ProgramProducer
     public HostedMake MakeInHost(string name)
     {
         // A replaced program is compiled here: the compile host reads no replacements.
-        if (Hosting is null || DebugLayer.PoolStoreTrace.Enabled || DebugLayer.MeshProbes.IsProbed(name) || (Overrides?.Has(name) ?? false))
+        if (Hosting is null || DebugLayer.PoolStoreTrace.Traces(name) || DebugLayer.MeshProbes.IsProbed(name) || (Overrides?.Has(name) ?? false))
         {
             return HostedMake.Here;
         }
