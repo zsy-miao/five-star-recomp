@@ -14,7 +14,9 @@ namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
 /// the driver's background recompiles are not in the estimate). From <see cref="WarnMiB"/> on a warning says so once;
 /// from <see cref="HoldMiB"/> on pipelines no list has set yet stay stand-ins (<see cref="Holding"/>,
 /// <see cref="StandInPipelines.Desktop"/>): their draws are skipped, the ones in use go on, and clears, blits, UI and
-/// lighting pipelines are never held. Below <see cref="ResumeMiB"/> first uses go on again.
+/// lighting pipelines are never held. Below <see cref="ResumeMiB"/> first uses go on again. From
+/// <see cref="CriticalMiB"/> on, pipelines idle for a while are given up as well (<see cref="PipelineEviction.Tighten"/>):
+/// held at their next use, they stay out until there is room.
 /// <c>--no-shader-table-guard</c> turns it off.
 /// </summary>
 internal static class ShaderTableGuard
@@ -23,6 +25,8 @@ internal static class ShaderTableGuard
     public const int WarnMiB = 400;
     public const int HoldMiB = 470;
     public const int ResumeMiB = 440;
+    public const int CriticalMiB = 495;
+    public const int RecompileFactor = 2;
     public const int EstimateNumerator = 3;
     public const int EstimateDenominator = 2;
 
@@ -70,7 +74,20 @@ internal static class ShaderTableGuard
         if (table == 0)
         {
             size = dxil * EstimateNumerator / EstimateDenominator / MiB;
-            source = $"estimated from {dxil / MiB:F0} MiB of DXIL in the pipelines in use, the driver's background recompiles not counted";
+            source = $"estimated from {dxil / MiB:F0} MiB of DXIL in the pipelines in use";
+
+            // The driver's recompiles were as much again where they could not be turned off (issue #64: 285 of 537 MiB).
+            if (!BackgroundProcessing.Off)
+            {
+                size *= RecompileFactor;
+                source += ", doubled for the driver's background recompiles";
+            }
+        }
+
+        // Nearly at the cap although first uses are held (the recompiles of the pipelines in use go on): idle ones go.
+        if (size >= CriticalMiB)
+        {
+            PipelineEviction.Tighten(dxil, _log);
         }
 
         if (size >= WarnMiB && !_warned)

@@ -179,7 +179,7 @@ WARN  [d3d12_xs] the driver's background shader work could not be turned off: ID
 ```
 
 and the tables fill within minutes of play (issue #64: 428 MiB after 21 minutes, 285 MiB of it recompiles; with the
-work off they stay near 350 MiB with none). The loader then discards the driver's measurements every 2 s instead, and
+work off they stay near 350 MiB with none). The loader then discards the driver's measurements every 2 s instead (which slowed the recompiles a little in one boot and did not stop them), and
 holds pipelines not used so far as stand-ins once a table is nearly full (their draws are missing, the device
 stays): see `--driver-background-work` and `--no-shader-table-guard` in [loader.md](loader.md). With developer mode
 on the line reads `driver background shader work off -> 0x00000000`.

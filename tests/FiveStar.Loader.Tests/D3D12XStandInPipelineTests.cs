@@ -235,7 +235,7 @@ public sealed unsafe class D3D12XStandInPipelineTests
             Assert.Equal((pipeline, false), (standIns.Desktop(first, out bool pending), pending));
             Assert.Equal((0, true, 1L), (standIns.Desktop(second, out pending), pending, standIns.HeldUses));
 
-            ShaderTableGuard.Check(0, ShaderTableGuard.ResumeMiB * MiB / 2);
+            ShaderTableGuard.Check(0, ShaderTableGuard.ResumeMiB * MiB / 4);
             Assert.Equal((pipeline, false), (standIns.Desktop(second, out pending), pending));
         }
         finally
