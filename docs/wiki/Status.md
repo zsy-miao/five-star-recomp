@@ -24,9 +24,11 @@ GTA VI does not run yet. Updated 27 November 2026.
   the table stays at about 350 MiB. Open: the mode may need Windows developer mode; new areas add shaders; an
   RTX 5090 report (#64) loses the device earlier in another way.
 - **Speed:** a world frame takes about 200-400 ms. Targets: 30 fps, then 60.
-- **Translator batch merged (27 November):** translation output changed, so shaders are translated and compiled
-  again on the next run (hours on a first run). It holds wide stores, reused buffer reads, the water-loop and
-  tile-class fixes and #61, #62, #66, #67.
+- **Frozen PROLOGUE card: fixed (27 November).** A translator bug made one cascade-shadow compute program write its
+  lists over the start of a graphics heap, which holds the quad the final composite draws. With the fix the game
+  shows the prologue yard as live 3D past the card, still wrongly lit.
+- **Translation output changed again (27 November):** the translator batch and this fix are on main, so shaders are
+  translated and compiled again on the next run (hours on a first run).
 - **AMD:** world geometry draws since #55.
 
 ## Known problems
@@ -39,7 +41,7 @@ GTA VI does not run yet. Updated 27 November 2026.
 | Driver shader table has about 160 MiB of headroom | smaller translated shaders |
 | Hair and vehicle bodies missing from surface colour | bring back the remaining skipped skinned passes one by one |
 | GPU writes to game memory in system RAM are slow | video-memory copies; a finer address map |
-| Picture freezes on the white PROLOGUE card | the game runs on behind it; from the world load a GPU pass overwrites the start of a graphics heap, which holds the quad the final composite draws. Probable writer: meshlet culling output landing at the heap start; being confirmed |
+| Final frame in the prologue yard is orange, banded and covered in bars | the freeze on the PROLOGUE card is fixed; lighting inputs and exposure next |
 | Ray tracing | not built; those passes are held and stand-ins fill some outputs |
 ![Progress](progress.svg)
 
