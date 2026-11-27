@@ -463,6 +463,11 @@ internal sealed class LoaderHost
             GameHangWatch.Start(_runtime.Images, SampledCounters, _runtime.D3D12X.Fences.DescribeWait, _log);
         }
 
+        if (_options.WatchMovies)
+        {
+            GameMovieWatch.Start(_log);
+        }
+
         StartAudioCapture();
         _runtime.D3D12X.WaitForProgramIndex();
 

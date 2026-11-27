@@ -91,8 +91,9 @@ internal static class VirtualGamepad
     [HotPath]
     private static (float X, float Y) Stick(StickKeys stick, PressedKeys keys)
     {
-        float x = Pressure(keys.IsDown(stick.Right)) - Pressure(keys.IsDown(stick.Left));
-        float y = Pressure(keys.IsDown(stick.Up)) - Pressure(keys.IsDown(stick.Down));
+        // An input script's stick keys (PadLUp and the rest) push the left stick whatever the bindings say.
+        float x = Pressure(keys.IsDown(stick.Right) || keys.IsDown(KeyNames.PadStickRight)) - Pressure(keys.IsDown(stick.Left) || keys.IsDown(KeyNames.PadStickLeft));
+        float y = Pressure(keys.IsDown(stick.Up) || keys.IsDown(KeyNames.PadStickUp)) - Pressure(keys.IsDown(stick.Down) || keys.IsDown(KeyNames.PadStickDown));
 
         if (x != 0 && y != 0)
         {
