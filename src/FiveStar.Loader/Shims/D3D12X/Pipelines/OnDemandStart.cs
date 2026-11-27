@@ -85,7 +85,7 @@ internal sealed class OnDemandStart
     {
         string identity = ContentHash.OfText(ShadersIdentity(), nameof(RdnaDecoder), Translation.ToString(), compiler.Identity, Binding.DescriptorWindow.Header);
 
-        if (DebugLayer.PoolStoreTrace.AllPrograms)
+        if (DebugLayer.PoolStoreTrace.Enabled)
         {
             identity = ContentHash.OfText(identity, "store-trace");
         }

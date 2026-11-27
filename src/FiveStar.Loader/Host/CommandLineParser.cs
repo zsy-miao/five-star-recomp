@@ -134,7 +134,7 @@ internal sealed class CommandLineParser
                 return SetTraceQueues();
             case "--d3d12-breadcrumbs" or "--gpu-timings":
                 return SetBreadcrumbs(option);
-            case "--d3d12-trace-draws" or "--d3d12-trace-pipeline" or "--d3d12-trace-records" or "--d3d12-watch-target" or "--d3d12-watch-limit" or "--d3d12-watch-rendered" or "--log-draws" or "--capture-when-world" or "--d3d12-dump-targets" or "--dump-frame" or "--dump-frame-dir" or "--dump-frame-max" or "--dump-frame-filter" or "--dump-frame-min-width" or "--probe-pipeline" or "--trace-stores-of" or "--census-passes" or "--hold-passes" or "--stub-passes":
+            case "--d3d12-trace-draws" or "--d3d12-trace-pipeline" or "--d3d12-trace-records" or "--d3d12-watch-target" or "--d3d12-watch-limit" or "--d3d12-watch-rendered" or "--log-draws" or "--capture-when-world" or "--d3d12-dump-targets" or "--dump-frame" or "--dump-frame-dir" or "--dump-frame-max" or "--dump-frame-filter" or "--dump-frame-min-width" or "--probe-pipeline" or "--census-passes" or "--hold-passes" or "--stub-passes":
                 return SetTraceDraws(option);
             case "--capture-dir" or "--capture-presents" or "--pix-capture" or "--pix-capture-dir":
                 return SetCapture(option);
@@ -162,10 +162,12 @@ internal sealed class CommandLineParser
     {
         switch (option)
         {
-            case "--watch-transient" or "--watch-hang" or "--watch-movies" or "--scan-line-views" or "--break-line-writes" or "--hunt-line-writer" or "--skip-compute-chains" or "--empty-indirect-after-skip" or "--retire-waits-all-queues" or "--no-split-at-waits" or "--user-data-constants" or "--buffer-records-heap-index" or "--typed-buffer-views" or "--check-null-addresses" or "--no-window-guard" or "--trace-pool-stores" or "--watch-pool-pages":
+            case "--watch-transient" or "--watch-hang" or "--skip-compute-chains" or "--empty-indirect-after-skip" or "--retire-waits-all-queues" or "--no-split-at-waits" or "--user-data-constants" or "--buffer-records-heap-index" or "--typed-buffer-views" or "--check-null-addresses" or "--no-window-guard" or "--trace-pool-stores" or "--watch-pool-pages":
                 return SetWatch(option);
             case "--watch-4g-lines":
                 return SetFourGiBLines();
+            case "--watch-movies" or "--break-line-writes":
+                return SetMoviesOrLineBreaks(option);
             case "--screens":
                 return SetScreensFile();
             case "--audio-capture":
@@ -1064,6 +1066,21 @@ internal sealed class CommandLineParser
         return true;
     }
 
+    /// <summary><c>--watch-movies</c> and <c>--break-line-writes</c>.</summary>
+    private bool SetMoviesOrLineBreaks(string option)
+    {
+        if (option == "--watch-movies")
+        {
+            _options.WatchMovies = true;
+        }
+        else
+        {
+            _options.BreakLineWrites = true;
+        }
+
+        return true;
+    }
+
     /// <summary><c>--watch-4g-lines</c>.</summary>
     private bool SetFourGiBLines()
     {
@@ -1078,22 +1095,6 @@ internal sealed class CommandLineParser
         if (option == "--watch-hang")
         {
             _options.WatchHang = true;
-        }
-        else if (option == "--watch-movies")
-        {
-            _options.WatchMovies = true;
-        }
-        else if (option == "--scan-line-views")
-        {
-            _options.ScanLineViews = true;
-        }
-        else if (option == "--break-line-writes")
-        {
-            _options.BreakLineWrites = true;
-        }
-        else if (option == "--hunt-line-writer")
-        {
-            _options.HuntLineWriter = true;
         }
         else if (option == "--trace-pool-stores")
         {
@@ -1154,13 +1155,6 @@ internal sealed class CommandLineParser
         if (option == "--probe-pipeline")
         {
             _options.ProbePipeline = Next();
-
-            return true;
-        }
-
-        if (option == "--trace-stores-of")
-        {
-            _options.TraceStoresOf = Next();
 
             return true;
         }

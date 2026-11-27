@@ -41,6 +41,12 @@ internal static unsafe class WriteBreakpoints
     private const ulong WriteEightBytes = 0x9;
     private const int ConditionShift = 16;
     private const int ConditionBits = 4;
+    private const int EnableBits = 2;
+    private const ulong EightByteMask = 7;
+
+    /// <summary>A ring entry's qwords: DR6, Rip, the thread id, Rsp, then the stack's.</summary>
+    private const int ThreadWord = 2;
+    private const int FirstStackWord = 4;
 
     /// <summary>THREAD_SET_CONTEXT | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION.</summary>
     private const uint ThreadAccess = 0x10 | 0x8 | 0x40;
@@ -49,6 +55,50 @@ internal static unsafe class WriteBreakpoints
     private const int MaxSites = 48;
     private const int ShownSites = 8;
     private const ulong RegisterMask = 0xF;
+
+    // rcx is the EXCEPTION_POINTERS; the two jumps' displacements (the last byte of each table) are set by EntryCode.
+    private static readonly byte[] IsSingleStep =
+    [
+        0x48, 0x8B, 0x01,                               // mov rax,[rcx]
+        0x81, 0x38, 0x04, 0x00, 0x00, 0x80,             // cmp dword ptr [rax],80000004h
+        0x75, 0x00,                                     // jne past
+    ];
+
+    private static readonly byte[] IsBreakpoint =
+    [
+        0x48, 0x8B, 0x51, 0x08,                         // mov rdx,[rcx+8]
+        0x48, 0x8B, 0x42, 0x68,                         // mov rax,[rdx+68h] (Dr6)
+        0xA8, 0x0F,                                     // test al,0Fh
+        0x74, 0x00,                                     // jz past
+    ];
+
+    /// <summary><c>mov r8,imm64</c>: the ring's address follows.</summary>
+    private static readonly byte[] MovR8 = [0x49, 0xB8];
+
+    private static readonly byte[] NoteAndContinue =
+    [
+        0x41, 0xB9, 0x01, 0x00, 0x00, 0x00,             // mov r9d,1
+        0xF0, 0x45, 0x0F, 0xC1, 0x08,                   // lock xadd [r8],r9d
+        0x41, 0x81, 0xE1, 0xFF, 0x00, 0x00, 0x00,       // and r9d,255
+        0x49, 0xC1, 0xE1, 0x07,                         // shl r9,7
+        0x4F, 0x8D, 0x44, 0x08, 0x40,                   // lea r8,[r8+r9+40h]
+        0x49, 0x89, 0x00,                               // mov [r8],rax
+        0x48, 0x8B, 0x82, 0xF8, 0x00, 0x00, 0x00,       // mov rax,[rdx+0F8h] (Rip)
+        0x49, 0x89, 0x40, 0x08,                         // mov [r8+8],rax
+        0x65, 0x48, 0x8B, 0x04, 0x25, 0x48, 0x00, 0x00, 0x00,   // mov rax,gs:[48h] (thread id)
+        0x49, 0x89, 0x40, 0x10,                         // mov [r8+10h],rax
+        0x4C, 0x8B, 0x92, 0x98, 0x00, 0x00, 0x00,       // mov r10,[rdx+98h] (Rsp)
+        0x4D, 0x89, 0x50, 0x18,                         // mov [r8+18h],r10
+        0x45, 0x31, 0xC9,                               // xor r9d,r9d
+        0x4B, 0x8B, 0x04, 0xCA,                         // next: mov rax,[r10+r9*8]
+        0x4B, 0x89, 0x44, 0xC8, 0x20,                   // mov [r8+r9*8+20h],rax
+        0x49, 0xFF, 0xC1,                               // inc r9
+        0x49, 0x83, 0xF9, StackWords,                   // cmp r9,12
+        0x72, 0xEE,                                     // jb next
+        0x48, 0xC7, 0x42, 0x68, 0x00, 0x00, 0x00, 0x00, // mov qword ptr [rdx+68h],0
+        0xB8, 0xFF, 0xFF, 0xFF, 0xFF,                   // mov eax,-1
+        0xC3,                                           // ret
+    ];
 
     private static readonly byte* Ring = (byte*)NativeMemory.AllocZeroed(HeaderBytes + (RingEntries * EntryBytes));
     private static readonly ulong[] Addresses = new ulong[Slots];
@@ -72,39 +122,14 @@ internal static unsafe class WriteBreakpoints
     /// </summary>
     public static byte[] EntryCode()
     {
-        var code = new List<byte>();
-        code.AddRange([0x48, 0x8B, 0x01]);                                  // mov rax,[rcx]
-        code.AddRange([0x81, 0x38, 0x04, 0x00, 0x00, 0x80]);                // cmp dword ptr [rax],80000004h
-        code.AddRange([0x75, 0x00]);                                        // jne past
+        var code = new List<byte>(IsSingleStep);
         int notStep = code.Count - 1;
-        code.AddRange([0x48, 0x8B, 0x51, 0x08]);                            // mov rdx,[rcx+8]
-        code.AddRange([0x48, 0x8B, 0x42, 0x68]);                            // mov rax,[rdx+68h] (Dr6)
-        code.AddRange([0xA8, 0x0F]);                                        // test al,0Fh
-        code.AddRange([0x74, 0x00]);                                        // jz past
+        code.AddRange(IsBreakpoint);
         int notOurs = code.Count - 1;
-        code.AddRange([0x49, 0xB8]);                                        // mov r8,ring
+
+        code.AddRange(MovR8);
         code.AddRange(BitConverter.GetBytes((ulong)Ring));
-        code.AddRange([0x41, 0xB9, 0x01, 0x00, 0x00, 0x00]);                // mov r9d,1
-        code.AddRange([0xF0, 0x45, 0x0F, 0xC1, 0x08]);                      // lock xadd [r8],r9d
-        code.AddRange([0x41, 0x81, 0xE1, 0xFF, 0x00, 0x00, 0x00]);          // and r9d,255
-        code.AddRange([0x49, 0xC1, 0xE1, 0x07]);                            // shl r9,7
-        code.AddRange([0x4F, 0x8D, 0x44, 0x08, 0x40]);                      // lea r8,[r8+r9+40h]
-        code.AddRange([0x49, 0x89, 0x00]);                                  // mov [r8],rax
-        code.AddRange([0x48, 0x8B, 0x82, 0xF8, 0x00, 0x00, 0x00]);          // mov rax,[rdx+0F8h] (Rip)
-        code.AddRange([0x49, 0x89, 0x40, 0x08]);                            // mov [r8+8],rax
-        code.AddRange([0x65, 0x48, 0x8B, 0x04, 0x25, 0x48, 0x00, 0x00, 0x00]);  // mov rax,gs:[48h] (thread id)
-        code.AddRange([0x49, 0x89, 0x40, 0x10]);                            // mov [r8+10h],rax
-        code.AddRange([0x4C, 0x8B, 0x92, 0x98, 0x00, 0x00, 0x00]);          // mov r10,[rdx+98h] (Rsp)
-        code.AddRange([0x4D, 0x89, 0x50, 0x18]);                            // mov [r8+18h],r10
-        code.AddRange([0x45, 0x31, 0xC9]);                                  // xor r9d,r9d
-        code.AddRange([0x4B, 0x8B, 0x04, 0xCA]);                            // next: mov rax,[r10+r9*8]
-        code.AddRange([0x4B, 0x89, 0x44, 0xC8, 0x20]);                      // mov [r8+r9*8+20h],rax
-        code.AddRange([0x49, 0xFF, 0xC1]);                                  // inc r9
-        code.AddRange([0x49, 0x83, 0xF9, StackWords]);                      // cmp r9,12
-        code.AddRange([0x72, 0xEE]);                                        // jb next
-        code.AddRange([0x48, 0xC7, 0x42, 0x68, 0x00, 0x00, 0x00, 0x00]);    // mov qword ptr [rdx+68h],0
-        code.AddRange([0xB8, 0xFF, 0xFF, 0xFF, 0xFF]);                      // mov eax,-1
-        code.Add(0xC3);                                                     // ret
+        code.AddRange(NoteAndContinue);
         code[notStep] = (byte)(code.Count - (notStep + 1));
         code[notOurs] = (byte)(code.Count - (notOurs + 1));
 
@@ -117,12 +142,12 @@ internal static unsafe class WriteBreakpoints
     /// </summary>
     public static void Arm(ReadOnlySpan<ulong> addresses, LoaderLog log)
     {
-        ulong dr7 = (1UL << (2 * Slots)) | (WriteEightBytes << (ConditionShift + (ConditionBits * Slots)));
+        ulong dr7 = (1UL << (EnableBits * Slots)) | (WriteEightBytes << (ConditionShift + (ConditionBits * Slots)));
 
         for (int i = 0; i < Slots && i < addresses.Length; i++)
         {
-            Addresses[i] = addresses[i] & ~7UL;
-            dr7 |= (1UL << (2 * i)) | (WriteEightBytes << (ConditionShift + (ConditionBits * i)));
+            Addresses[i] = addresses[i] & ~EightByteMask;
+            dr7 |= (1UL << (EnableBits * i)) | (WriteEightBytes << (ConditionShift + (ConditionBits * i)));
         }
 
         _dr7 = dr7;
@@ -250,7 +275,7 @@ internal static unsafe class WriteBreakpoints
     {
         var text = new StringBuilder();
         ulong registers = entry[0] & RegisterMask;
-        text.Append(CultureInfo.InvariantCulture, $"[write break] #{hits}: thread {entry[2]} wrote ");
+        text.Append(CultureInfo.InvariantCulture, $"[write break] #{hits}: thread {entry[ThreadWord]} wrote ");
 
         for (int i = 0; i <= Slots; i++)
         {
@@ -271,7 +296,7 @@ internal static unsafe class WriteBreakpoints
 
         text.Append(CultureInfo.InvariantCulture, $"in the instruction before {Where((nint)entry[1])}; code addresses on its stack:");
         var images = Shims.ShimContext.ActiveRuntime?.Images;
-        ulong* stack = entry + 4;
+        ulong* stack = entry + FirstStackWord;
 
         for (int i = 0; i < StackWords; i++)
         {

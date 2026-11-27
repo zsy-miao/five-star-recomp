@@ -32,23 +32,17 @@ internal static unsafe class FourGiBLineWatch
     private const int ShownRuns = 4;
     private const int ShownBytes = 64;
 
-    private static readonly Dictionary<ulong, byte[]> Snapshots = [];
-    /// <summary>Store-trace ranges the transient pool watch leaves free, and stores named per report.</summary>
-    private const int FirstTraceSlot = 3;
-    private const int TraceSlots = 5;
-    private const int ShownStores = 12;
+    private const int ShownPipelines = 16;
 
-    private const int PeekBytes = 48;
-
-    private static readonly ulong[] MeshletLists = [0x11e42000, 0x12042000];
+    /// <summary>The game's graphics heap (1.0.2.1), whose start holds its static quad buffers.</summary>
     private const ulong GraphicsHeapBytes = 0x89700000;
+
+    private static readonly Dictionary<ulong, byte[]> Snapshots = [];
 
     /// <summary>Where <c>--break-line-writes</c> breaks in the graphics heap: its first index, an offset inside the id runs, the composite's quad.</summary>
     private static readonly ulong[] BreakOffsets = [0x0, 0xbf8, 0x1be0];
     private static readonly Dictionary<ulong, ulong> Sizes = [];
-    private static readonly ulong[] Traced = new ulong[TraceSlots];
-    private static readonly Dictionary<string, (long Stores, ulong Address, uint Value)> Stores = [];
-    private static long _storesSeen;
+
     private static readonly HashSet<ulong> Unreadable = [];
     private static readonly Dictionary<nint, int> WindowPipelines = [];
     private static readonly uint[] MarkersNow = new uint[GpuBreadcrumbs.Slots];
@@ -56,7 +50,6 @@ internal static unsafe class FourGiBLineWatch
     private static readonly uint[] MarkersBefore = new uint[GpuBreadcrumbs.Slots];
     private static bool _markersTaken;
     private static int _windows;
-    private const int ShownPipelines = 16;
     private static LoaderLog? _log;
     private static ulong[] _since = [];
     private static long _gpuChanges;
@@ -147,11 +140,6 @@ internal static unsafe class FourGiBLineWatch
         // Before the memory is read: a write seen in this check or the next one came after these markers.
         GpuBreadcrumbs.Snapshot(MarkersNow);
 
-        if (PoolStoreTrace.Enabled)
-        {
-            PoolStoreTrace.Collect(Traced, WatchedBytes, Stores, ref _storesSeen);
-        }
-
         foreach (var (line, before) in Snapshots.ToArray())
         {
             var after = Read(line, before.Length);
@@ -197,11 +185,6 @@ internal static unsafe class FourGiBLineWatch
             Window(line);
         }
 
-        if (index && Sizes.GetValueOrDefault(line) == GraphicsHeapBytes)
-        {
-            LineWriterHunt.Arm(line);
-        }
-
         if (!index && (!retired || (count > DetailedReports && (count & (count - 1)) != 0)))
         {
             return;
@@ -215,17 +198,16 @@ internal static unsafe class FourGiBLineWatch
             return;
         }
 
+        Report(line, before, after, runs, count, index, retired);
+    }
+
+    private static void Report(ulong line, byte[] before, byte[] after, List<(int Offset, int Bytes)> runs, long count, bool index, bool retired)
+    {
         var text = new StringBuilder();
         text.Append(CultureInfo.InvariantCulture, $"[4g lines] #{count}: 0x{line:x} changed in {runs.Count} runs");
 
-        if (index && PoolStoreTrace.Enabled)
-        {
-            TraceStores(text, line, after.Length);
-        }
-
         if (index)
         {
-            Peek(text, line);
             WriteBreakpoints.Summarize(text);
             Windows(text, line);
         }
@@ -242,62 +224,10 @@ internal static unsafe class FourGiBLineWatch
         }
         else
         {
-            text.Append("\n      no execution retired since the last check: the CPU wrote it");
+            text.Append("\n      no execution retired since the last check: the CPU wrote it, or GPU work that still runs");
         }
 
         _log?.Warn(text.ToString());
-    }
-
-    /// <summary>
-    /// With <c>--trace-pool-stores</c>: the first lines an index run shows on get a range of the store trace each
-    /// (<see cref="PoolStoreTrace.SetRange"/>, slots <see cref="FirstTraceSlot"/> up), so the programs made on demand
-    /// log their stores there from then on, and each later report names the newest of them.
-    /// </summary>
-    private static void TraceStores(StringBuilder text, ulong line, int bytes)
-    {
-        int slot = Array.IndexOf(Traced, line);
-
-        if (slot < 0)
-        {
-            slot = Array.IndexOf(Traced, 0UL);
-
-            if (slot < 0)
-            {
-                return;
-            }
-
-            Traced[slot] = line;
-            PoolStoreTrace.SetRange(FirstTraceSlot + slot, line, (ulong)bytes);
-            text.Append(CultureInfo.InvariantCulture, $"\n      stores into it are traced from now on (range {FirstTraceSlot + slot})");
-
-            return;
-        }
-
-        PoolStoreTrace.Describe(text, line, (ulong)bytes, ShownStores);
-        text.Append(CultureInfo.InvariantCulture, $"\n      traced stores into the watched lines by program ({PoolStoreTrace.Kinds}):");
-
-        foreach (var (program, tally) in Stores.OrderByDescending(pair => pair.Value.Stores).Take(ShownStores))
-        {
-            text.Append(CultureInfo.InvariantCulture, $"\n        {tally.Stores} by {program}, the last 0x{tally.Address:x} = 0x{tally.Value:x}");
-        }
-    }
-
-    /// <summary>
-    /// The first dwords of the game's two visible-meshlet lists (1.0.2.1: 0x11e42000 and 0x12042000 into its 2.2 GiB
-    /// graphics heap, BatchCullMeshlets' output V#s in w312 and w313), beside an index run at the heap's start: whether the
-    /// ids are in their own buffer too.
-    /// </summary>
-    private static void Peek(StringBuilder text, ulong line)
-    {
-        foreach (ulong offset in MeshletLists)
-        {
-            var bytes = Read(line + offset, PeekBytes);
-
-            if (bytes is not null)
-            {
-                text.Append(CultureInfo.InvariantCulture, $"\n      at + 0x{offset:x}: {Convert.ToHexString(bytes)}");
-            }
-        }
     }
 
     /// <summary>

@@ -196,10 +196,7 @@ internal static unsafe class XboxQueueMethods
         {
             bool waits = i < count && desktop[i] != lists[i] && (MemoryWaits.HasWaits(lists[i]) || IndirectGather.Has(lists[i]));
 
-            // --hunt-line-writer: every list alone, one at a time over all queues, watched until it is done.
-            bool alone = i < count && DebugLayer.LineWriterHunt.Armed;
-
-            if (i < count && !waits && !alone)
+            if (i < count && !waits)
             {
                 continue;
             }
@@ -210,25 +207,10 @@ internal static unsafe class XboxQueueMethods
                 ListSubmissions.Submitted(queue, lists + start, i - start, objects);
             }
 
-            if (alone)
-            {
-                DebugLayer.LineWriterHunt.Enter();
-            }
-
             if (waits)
             {
                 SubmitSegments(queue, lists[i], desktop[i], execute);
                 ListSubmissions.Submitted(queue, lists + i, 1, objects);
-            }
-            else if (alone)
-            {
-                execute(inner, 1, desktop + i);
-                ListSubmissions.Submitted(queue, lists + i, 1, objects);
-            }
-
-            if (alone)
-            {
-                DebugLayer.LineWriterHunt.Watch(queue, lists[i], desktop[i] != lists[i]);
             }
 
             start = i + 1;

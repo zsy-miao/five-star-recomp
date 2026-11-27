@@ -130,11 +130,6 @@ internal static unsafe class BufferRecords
     /// <summary>The record as it is; the first <see cref="KeptLogged"/> of each reason are logged.</summary>
     private static BufferRecord Kept(BufferRecord record, ViewKind kind, KeptReason reason, ulong address, nint desktop)
     {
-        if (DebugLayer.LineViewScan.Enabled)
-        {
-            DebugLayer.LineViewScan.Keeping(address);
-        }
-
         int count = Interlocked.Increment(ref KeptCounts[(int)reason]);
 
         if (count > KeptLogged)

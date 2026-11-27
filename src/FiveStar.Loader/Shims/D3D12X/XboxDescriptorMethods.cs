@@ -331,11 +331,6 @@ internal static unsafe class XboxDescriptorMethods
 
             void* view = TargetViewDescriptions.UnorderedAccessView(desktop, fitted, copy);
 
-            if (DebugLayer.LineViewScan.Enabled)
-            {
-                BufferViewRanges.Check(resource, desktop, description, view, record.Base != 0);
-            }
-
             if (RtStandIns.Enabled)
             {
                 UavViews.Note(destination, desktop, desc, view);

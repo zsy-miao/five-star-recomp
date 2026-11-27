@@ -31,11 +31,13 @@ public sealed unsafe class WriteBreakpointsTests
         ulong* stack = stackalloc ulong[16];
         stack[0] = 0x1111;
         stack[11] = 0x2222;
+
         byte* context = (byte*)NativeMemory.AllocZeroed(ContextBytes);
         uint* record = stackalloc uint[8];
         void** pointers = stackalloc void*[2];
         pointers[0] = record;
         pointers[1] = context;
+
         *(ulong*)(context + Dr6) = 0x4;
         *(ulong*)(context + Rsp) = (ulong)stack;
         *(ulong*)(context + Rip) = 0x140001234;
@@ -50,10 +52,12 @@ public sealed unsafe class WriteBreakpointsTests
         Assert.Equal(FellThrough, fault);
         Assert.Equal(-1, step);
         Assert.Equal(before + 1, *(uint*)WriteBreakpoints.RingStart);
+
         Assert.Equal(0x4UL, noted[0]);
         Assert.Equal(0x140001234UL, noted[1]);
         Assert.Equal((ulong)Kernel32.GetCurrentThreadId(), noted[2]);
         Assert.Equal((ulong)stack, noted[3]);
+
         Assert.Equal(0x1111UL, noted[4]);
         Assert.Equal(0x2222UL, noted[15]);
         Assert.Equal(0UL, *(ulong*)(context + Dr6));

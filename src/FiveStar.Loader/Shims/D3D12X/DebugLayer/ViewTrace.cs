@@ -28,6 +28,7 @@ internal static unsafe class ViewTrace
     private const int RecordDwords = 8;
 
     private const int RecordsDword = 2;
+    private const int FieldDwords = 4;
     private const int StrideDword = 1;
     private const int StrideShift = 16;
     private const uint StrideMask = 0x3FFF;
@@ -126,6 +127,20 @@ internal static unsafe class ViewTrace
         }
     }
 
+    /// <summary>Whether the window's copy of a record's four V# dwords differs from the heap's record.</summary>
+    private static bool Differs(ShaderVisibleHeap views, uint index, uint* window)
+    {
+        for (int dword = 0; dword < FieldDwords; dword++)
+        {
+            if (window[dword] != views.RecordDword(index, dword))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>
     /// What a program sees of a buffer record: the window's copy of its first four dwords when they differ from the
     /// heap's record, and for a console base the desktop buffer and byte offset the address map reads it from
@@ -136,9 +151,14 @@ internal static unsafe class ViewTrace
         var text = new StringBuilder();
         uint* window = (uint*)(ShimContext.Runtime.D3D12X.Bindings.Window.Data + windowOffset);
 
-        if (ShimContext.Runtime.D3D12X.Bindings.Window.Data != null && (window[0] != views.RecordDword(index, 0) || window[1] != views.RecordDword(index, 1) || window[2] != views.RecordDword(index, 2) || window[3] != views.RecordDword(index, 3)))
+        if (ShimContext.Runtime.D3D12X.Bindings.Window.Data != null && Differs(views, index, window))
         {
-            text.Append(CultureInfo.InvariantCulture, $"; THE WINDOW HOLDS {window[0]:x8} {window[1]:x8} {window[2]:x8} {window[3]:x8}");
+            text.Append("; THE WINDOW HOLDS");
+
+            for (int dword = 0; dword < FieldDwords; dword++)
+            {
+                text.Append(CultureInfo.InvariantCulture, $" {window[dword]:x8}");
+            }
         }
 
         uint high = views.RecordDword(index, StrideDword) & HighMask;

@@ -64,9 +64,6 @@ internal sealed unsafe class GameMemoryViews
 
     /// <summary>The desktop buffer and byte offset of each view pair's byte 0 (<see cref="Locate"/>).</summary>
     private readonly Dictionary<uint, (nint Buffer, ulong Offset)> _viewSources = [];
-
-    /// <summary>The console address of byte 0 of each view over a game-memory buffer, the SRV and its UAV (<see cref="Start"/>).</summary>
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<uint, ulong> _viewStarts = new();
     private readonly XMemPhysicalMemory _memory;
     private readonly SectionHeaps _heaps;
     private readonly AddressMap _map = new(MapSpans, DescriptorWindow.UnmappedSlot);
@@ -92,12 +89,6 @@ internal sealed unsafe class GameMemoryViews
 
     /// <summary>Asks for a window by id (<see cref="WindowResidency.Ask"/>); null without --evict-windows.</summary>
     public Action<int>? Ask { get; set; }
-
-    /// <summary>The console address a map view over a game-memory buffer starts at; 0 for any other heap index.</summary>
-    public ulong Start(uint view)
-    {
-        return _viewStarts.GetValueOrDefault(view);
-    }
 
     /// <summary>The map entry programs read for <paramref name="address"/>: view index and offset field; (0, 0) before the map exists.</summary>
     public (uint View, uint Field) Entry(ulong address)
@@ -542,8 +533,6 @@ internal sealed unsafe class GameMemoryViews
             _next += PairSize;
             WriteViews(range.Resource, start, Math.Min(ViewBytes, range.Size - start), pair, writable);
             RangePairs(range).Add(pair);
-            _viewStarts[pair] = range.GameAddress + start;
-            _viewStarts[pair + 1] = range.GameAddress + start;
 
             if (!_map.Map(map, range.GameAddress + start, Math.Min(ChunkBytes, range.Size - start), pair, range.GameAddress + start))
             {

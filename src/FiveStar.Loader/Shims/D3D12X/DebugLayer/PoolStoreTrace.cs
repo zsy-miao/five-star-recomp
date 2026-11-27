@@ -68,97 +68,14 @@ internal static unsafe class PoolStoreTrace
     private static long _outsideSeen;
     private static long _malformed;
     private static int _outsideLogged;
-    private static long _storeEntries;
-    private static long _otherKinds;
-
-    /// <summary>The ring's entries <see cref="Collect"/> read so far: stores, and loop-guard and constant-load notes.</summary>
-    public static string Kinds => $"{Interlocked.Read(ref _storeEntries)} stores and {Interlocked.Read(ref _otherKinds)} loop-guard and constant-load notes read from the ring";
 
     /// <summary>Whether programs made on demand trace their stores.</summary>
     public static bool Enabled { get; set; }
 
-    /// <summary>
-    /// <c>--trace-stores-of &lt;text,...&gt;</c>: only the programs whose name holds one of the texts trace their stores,
-    /// made under their name plus <see cref="Suffix"/> so every other program stays warm; null traces them all.
-    /// </summary>
-    public static string? Filter { get; set; }
-
-    /// <summary>The name a traced program is made under with <see cref="Filter"/>: its own plus this.</summary>
-    public const string Suffix = ".stores2";
-
-    /// <summary>Whether every program made on demand traces its stores (<c>--trace-pool-stores</c>): they have a cache identity of their own.</summary>
-    public static bool AllPrograms => Enabled && Filter is null;
-
-    /// <summary>Whether the program <paramref name="name"/> traces its stores.</summary>
-    public static bool Traces(string name)
-    {
-        return Enabled && (Filter is null || name.Contains(Suffix, StringComparison.Ordinal));
-    }
-
-    /// <summary>
-    /// A traced program's source with its formatted stores traced too: the prelude's FmtStore has no trace hook, so
-    /// each call goes through a wrapper defined after the prelude that notes a store into the first 64 KiB of its view
-    /// (a map view over a game-memory buffer, or a kept heap index) as a view entry, then stores.
-    /// BatchCullMeshlets' visible-meshlet appends are such stores.
-    /// </summary>
-    public static string Instrument(string hlsl)
-    {
-        const string Include = "#include \"rdna_prelude.hlsli\"";
-        const string Call = "FmtStore(";
-        int at = hlsl.IndexOf(Include, StringComparison.Ordinal);
-
-        if (at < 0 || !hlsl.Contains(Call, StringComparison.Ordinal))
-        {
-            return hlsl;
-        }
-
-        string body = hlsl[(at + Include.Length)..].Replace(Call, "FsTracedFmtStore(", StringComparison.Ordinal);
-        const string Wrapper = "\nvoid FsTracedFmtStore(uint h, uint a, uint c, uint4 v, uint n) { if ((a & ~3u) < 0x10000u) trace_entry(a & ~3u, h | 0x80000000u, v.x); FmtStore(h, a, c, v, n); }\n";
-
-        return hlsl[..(at + Include.Length)] + Wrapper + body;
-    }
-
-    /// <summary>The extracted program a name stands for: without <see cref="Suffix"/>.</summary>
-    public static string Source(string name)
-    {
-        if (Filter is null)
-        {
-            return name;
-        }
-
-        return name.Replace(Suffix, string.Empty, StringComparison.Ordinal);
-    }
-
-    /// <summary>The index with the programs <see cref="Filter"/> names renamed (<see cref="Suffix"/>).</summary>
-    public static FiveStar.Shaders.Cache.ProgramIndex Rename(FiveStar.Shaders.Cache.ProgramIndex index)
-    {
-        if (Filter is null)
-        {
-            return index;
-        }
-
-        string[] texts = Filter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        return index.Renamed(name => Renames(name, texts), Suffix);
-    }
-
-    private static bool Renames(string name, string[] texts)
-    {
-        if (!texts.Any(text => name.Contains(text, StringComparison.OrdinalIgnoreCase)))
-        {
-            return false;
-        }
-
-        Programs[FiveStar.Shaders.Translation.MeshProbe.Id(name)] = name;
-
-        return true;
-    }
-
     /// <summary>The define a program made on demand starts with; registers its id.</summary>
     public static string Header(string program)
     {
-        // With a filter the id is the name's hash: a traced program's DXIL is kept between boots under its name.
-        uint id = Filter is null ? (uint)Interlocked.Increment(ref _nextId) : FiveStar.Shaders.Translation.MeshProbe.Id(Source(program));
+        uint id = (uint)Interlocked.Increment(ref _nextId);
         Programs[id] = program;
 
         return $"#define FIVESTAR_STORE_TRACE {id}u\n";
@@ -260,56 +177,6 @@ internal static unsafe class PoolStoreTrace
         {
             text.Append("\n    none");
         }
-    }
-
-    /// <summary>
-    /// Counts, per program, the ring's entries since <paramref name="seen"/> whose address lies in the first
-    /// <paramref name="bytes"/> after one of <paramref name="starts"/> (0: unused), with the last address and value
-    /// of each; called often enough (<see cref="FourGiBLineWatch"/>, every 10 ms) the ring does not lap it.
-    /// </summary>
-    public static void Collect(ReadOnlySpan<ulong> starts, ulong bytes, Dictionary<string, (long Stores, ulong Address, uint Value)> into, ref long seen)
-    {
-        byte* header = Header();
-
-        if (header == null)
-        {
-            return;
-        }
-
-        long count = Volatile.Read(ref *(uint*)header);
-
-        if (count < seen)
-        {
-            seen = 0;
-        }
-
-        for (long n = Math.Max(seen, count - Entries); n < count; n++)
-        {
-            uint* entry = Entry(header, (uint)n);
-
-            if ((entry[HighWord] & KindMask & ~ViewKind) != 0)
-            {
-                Interlocked.Increment(ref _otherKinds);
-
-                continue;
-            }
-
-            ulong address = Address(entry);
-            Interlocked.Increment(ref _storeEntries);
-
-            foreach (ulong start in starts)
-            {
-                if (start != 0 && address >= start && address - start < bytes)
-                {
-                    string program = Programs.GetValueOrDefault(entry[0], $"program {entry[0]}");
-                    into[program] = (into.GetValueOrDefault(program).Stores + 1, address, entry[ValueWord]);
-
-                    break;
-                }
-            }
-        }
-
-        seen = count;
     }
 
     /// <summary>
@@ -443,16 +310,6 @@ internal static unsafe class PoolStoreTrace
         }
 
         ulong start = TransientPoolViews.StartOf(entry[HighWord] & ~ViewKind);
-
-        if (start == 0)
-        {
-            start = LineViewScan.StartOf(entry[HighWord] & ~ViewKind);
-        }
-
-        if (start == 0)
-        {
-            start = ShimContext.Runtime.D3D12X.MemoryViews.Start(entry[HighWord] & ~ViewKind);
-        }
 
         if (start == 0)
         {

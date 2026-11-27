@@ -111,11 +111,6 @@ internal static unsafe class BottomOfPipeWrites
         {
             ulong at = address + ((ulong)i * sizeof(uint));
 
-            if (LineViewScan.Enabled)
-            {
-                LineViewScan.Writes(at, sizeof(uint), "a bottom-of-pipe write", words[i]);
-            }
-
             if (!memory.TryTranslate(at, out ulong desktop))
             {
                 WarnUnknown(at);

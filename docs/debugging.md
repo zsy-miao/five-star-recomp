@@ -262,8 +262,7 @@ V# in `s[12:15]`, and its prefix-sum loop has `s_mov_b32 s11, s8` at a loop head
 and `s_bcnt1_i32_b32` are now integer operations of one dword (`SaluEmitter.TryMoveMask`, `ScalarLogicEmitter`).
 With the fix w321 logs no id run in 780 s, the composite draws 860,160 and then 921,600 pixels after present 2800
 with its vertices intact, and the captures show the credits and the prison yard, though with the lighting faults
-that remain. `--hunt-line-writer` (every command list alone, the writing operation named by its breadcrumb) was
-written for the same hunt and has not been run.
+that remain.
 
 ## Pool page watch
 

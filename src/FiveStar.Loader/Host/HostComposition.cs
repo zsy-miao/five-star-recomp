@@ -181,8 +181,7 @@ internal static class HostComposition
     private static PipelineFolders StartOnDemand(HostOptions options, PipelineFolders folders)
     {
         var root = options.ProgramCache ?? Path.Combine(WorkDirectory(options), OnDemandStart.FolderName);
-        Shims.D3D12X.DebugLayer.PoolStoreTrace.Filter = options.TraceStoresOf;
-        Shims.D3D12X.DebugLayer.PoolStoreTrace.Enabled = options.TracePoolStores || options.TraceStoresOf is not null;
+        Shims.D3D12X.DebugLayer.PoolStoreTrace.Enabled = options.TracePoolStores;
         Shims.D3D12X.Binding.UserDataConstants.Enabled = options.UserDataConstants;
         Shims.D3D12X.Binding.WindowFeedback.Enabled = options.EvictWindows;
         OnDemandStart.Translation = OnDemandTranslation(options, root);

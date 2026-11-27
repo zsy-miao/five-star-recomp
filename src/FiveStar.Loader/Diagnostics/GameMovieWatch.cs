@@ -34,6 +34,7 @@ internal sealed unsafe class GameMovieWatch
     private const int MovieSize = 528;
 
     /// <summary>BINK (bink.h): Width, Height, Frames, FrameNum, LastFrameNum, FrameRate, FrameRateDiv.</summary>
+    private const int BinkHeightOffset = 4;
     private const int BinkFramesOffset = 8;
     private const int BinkFrameOffset = 12;
     private const int BinkLastFrameOffset = 16;
@@ -138,7 +139,7 @@ internal sealed unsafe class GameMovieWatch
         if (GameHangWatch.IsReadable(bink) && GameHangWatch.IsReadable(bink + BinkHeaderSize))
         {
             frame = *(uint*)(bink + BinkFrameOffset);
-            state.Append(CultureInfo.InvariantCulture, $", {*(uint*)bink}x{*(uint*)(bink + 4)}, {*(uint*)(bink + BinkFramesOffset)} frames at {*(uint*)(bink + BinkRateOffset)}/{*(uint*)(bink + BinkRateDivOffset)}");
+            state.Append(CultureInfo.InvariantCulture, $", {*(uint*)bink}x{*(uint*)(bink + BinkHeightOffset)}, {*(uint*)(bink + BinkFramesOffset)} frames at {*(uint*)(bink + BinkRateOffset)}/{*(uint*)(bink + BinkRateDivOffset)}");
             position = string.Create(CultureInfo.InvariantCulture, $"frame {frame} (last decoded {*(uint*)(bink + BinkLastFrameOffset)}), sync frame {*(uint*)(movie + MovieSyncFrameOffset)}, goto {*(uint*)(movie + MovieGotoOffset)}");
         }
 
