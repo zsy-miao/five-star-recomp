@@ -686,7 +686,19 @@ internal sealed class CommandLineParser
         {
             string[] parts = Next().Split(',');
             _options.VramTwinPresents = int.Parse(parts[0], CultureInfo.InvariantCulture);
-            _options.VramTwinPoolOnly = parts.Length > 1 && parts[1] == "pool";
+
+            // After the interval: "pool" and a budget in MiB, in any order.
+            foreach (string part in parts.Skip(1))
+            {
+                if (part == "pool")
+                {
+                    _options.VramTwinPoolOnly = true;
+                }
+                else
+                {
+                    _options.VramTwinMebibytes = int.Parse(part, CultureInfo.InvariantCulture);
+                }
+            }
         }
 
         return true;

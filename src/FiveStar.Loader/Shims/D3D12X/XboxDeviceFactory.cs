@@ -212,6 +212,7 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
 
         Presenter.Pix?.AfterPresent(0);
         SectionHeaps.Budget = GpuMemoryBudget.Open(inner, _log);
+        Binding.VramTwins.MemoryBudget = SectionHeaps.Budget;
         SystemMemoryReserve.Take(inner, SectionHeaps.Budget, _log);
         SectionHeaps.WindowOpened = MemoryViews.WindowOpened;
 

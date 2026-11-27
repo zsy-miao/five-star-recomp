@@ -16,8 +16,15 @@ namespace FiveStar.Loader.Shims.D3D12X.Binding;
 /// </summary>
 internal static class VramTwins
 {
-    /// <summary>Twins stop being made past this much video memory: an RTX 4090 has 9 GiB left in the world.</summary>
-    private const ulong Budget = 8000UL << 20;
+    /// <summary>
+    /// Twins stop being made past this much video memory unless <see cref="Mebibytes"/> says otherwise: the world uses
+    /// 16.1 of an RTX 4090's 22.8 GiB local budget without twins (w371), and twins past the budget get demoted to
+    /// system memory, which measures nothing (w325 asked for 6.5 GiB and crashed).
+    /// </summary>
+    private const ulong DefaultBudget = 5120UL << 20;
+
+    /// <summary>Local memory left free beside the twins when the device's budget is read before each twin.</summary>
+    private const ulong Headroom = 1024UL << 20;
 
     /// <summary>A buffer over an allocation larger than this gets no twin (the game's 2.2 and 1.1 GiB heaps: they would not fit).</summary>
     private const ulong LargestRange = 512UL << 20;
@@ -40,6 +47,7 @@ internal static class VramTwins
     private static long lastPresent = -1;
     private static long lastRefresh;
     private static long refreshes;
+    private static bool refused;
 
     /// <summary>Presents between two copies of every twin; 0 turns the twins off.</summary>
     public static int RefreshPresents { get; set; }
@@ -53,8 +61,48 @@ internal static class VramTwins
     /// <summary>Where the totals are logged.</summary>
     public static LoaderLog? Log { get; set; }
 
+    /// <summary>Video memory the twins may take in MiB; 0 for <see cref="DefaultBudget"/>.</summary>
+    public static int Mebibytes { get; set; }
+
+    /// <summary>The device's memory budgets, read before each twin so twins never push the process past its local budget.</summary>
+    public static GpuMemoryBudget? MemoryBudget { get; set; }
+
     /// <summary>Whether twins are made.</summary>
     public static bool Enabled => RefreshPresents > 0;
+
+    private static ulong Budget
+    {
+        get
+        {
+            if (Mebibytes > 0)
+            {
+                return (ulong)Mebibytes << MebibyteShift;
+            }
+
+            return DefaultBudget;
+        }
+    }
+
+    /// <summary>Whether a twin of <paramref name="size"/> bytes fits the twins' budget and the device's local budget; under the gate.</summary>
+    private static bool Fits(ulong size)
+    {
+        bool fits = bytes + size <= Budget;
+        ulong local = 0;
+        ulong usage = 0;
+
+        if (fits && MemoryBudget is not null && MemoryBudget.TryReadLocal(out local, out usage))
+        {
+            fits = usage + size + Headroom <= local;
+        }
+
+        if (!fits && !refused)
+        {
+            refused = true;
+            Log?.Warn($"[vram twins] no more twins from {size >> MebibyteShift} MiB on: {Twins.Count} twins, {bytes >> MebibyteShift} of {Budget >> MebibyteShift} MiB, video memory {usage >> MebibyteShift} of {local >> MebibyteShift} MiB in use");
+        }
+
+        return fits;
+    }
 
     /// <summary>
     /// The twin of <paramref name="source"/>, a buffer of <paramref name="size"/> bytes over game memory, made on the
@@ -74,7 +122,7 @@ internal static class VramTwins
                 return known.Copy.NativePointer;
             }
 
-            if (bytes + size > Budget || !Open(nativeDevice))
+            if (!Fits(size) || !Open(nativeDevice))
             {
                 return 0;
             }

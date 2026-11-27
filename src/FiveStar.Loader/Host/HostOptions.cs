@@ -349,6 +349,9 @@ internal sealed record HostOptions
     /// <summary>Only the streaming pool's windows get twins (<c>--vram-twin-ceiling N,pool</c>).</summary>
     public bool VramTwinPoolOnly { get; set; }
 
+    /// <summary>Video memory the twins may take, in MiB (<c>--vram-twin-ceiling N,pool,MiB</c>); 0: the default.</summary>
+    public int VramTwinMebibytes { get; set; }
+
     /// <summary>The frame interval the frame events keep (<c>--frame-rate</c>); the game's own by default.</summary>
     public Shims.D3D12X.Present.FrameRate FrameRate { get; set; }
 

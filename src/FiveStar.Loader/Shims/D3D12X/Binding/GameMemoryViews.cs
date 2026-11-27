@@ -522,6 +522,13 @@ internal sealed unsafe class GameMemoryViews
                 }
             }
 
+            // --vram-twin-ceiling: the twin stops copying from the heap, and its source buffer goes with the views.
+            if (_twinSources.Remove(key, out nint twinSource))
+            {
+                VramTwins.Forget(twinSource);
+                buffers.Add(twinSource);
+            }
+
             if (_data == null || !_resident.Remove(key, out var pages))
             {
                 return buffers;
