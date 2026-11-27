@@ -142,7 +142,7 @@ internal sealed class CommandLineParser
                 return SetDepthFuncOverride(option);
             case "--present-test":
                 return SetPresentTest();
-            case "--raytracing" or "--raytracing-gpu" or "--rt-traversal" or "--no-rt-stand-ins" or "--rt-stand-ins-reach" or "--trace-shadows":
+            case "--raytracing" or "--raytracing-gpu" or "--rt-traversal" or "--no-rt-stand-ins" or "--rt-stand-ins-reach" or "--trace-shadows" or "--rt-ambient":
                 return SetRayTracing(option);
             case "--xdsp-convolution":
                 return SetXDspConvolution();
@@ -1389,10 +1389,15 @@ internal sealed class CommandLineParser
     /// --raytracing (the DLL's CPU paths), --raytracing-gpu (the inventory of its GPU builder), --rt-traversal (the
     /// game's traversal programs run, with --raytracing's paths), --no-rt-stand-ins, --rt-stand-ins-reach (a held
     /// pass's fill takes every texture UAV in its reach), or --trace-shadows (the R9G9B9E5 shadows the stand-ins' light
-    /// is read through).
+    /// is read through); --rt-ambient is <see cref="SetRtAmbient"/>'s.
     /// </summary>
     private bool SetRayTracing(string option)
     {
+        if (option == "--rt-ambient")
+        {
+            return SetRtAmbient();
+        }
+
         if (option is "--no-rt-stand-ins" or "--rt-stand-ins-reach" or "--trace-shadows")
         {
             _options.NoRtStandIns |= option == "--no-rt-stand-ins";
@@ -1414,6 +1419,58 @@ internal sealed class CommandLineParser
         else
         {
             _options.RayTracing = true;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// --rt-ambient scene[:share[:tint]] | constant[:level]: the screen-probe light's stand-in writes a share of the
+    /// scene's own cached light (the default: share 1, as a grey, tint 0) or a constant grey (0.6).
+    /// </summary>
+    private bool SetRtAmbient()
+    {
+        const int WithNumber = 2;
+        const int WithTint = 3;
+        string value = Next();
+        string[] parts = value.Split(':');
+        bool scene = parts[0] == "scene";
+        var numbers = parts.Skip(1).Select(Number).ToList();
+
+        // A part that is no number reads as negative, which nothing here takes.
+        static float Number(string part)
+        {
+            if (float.TryParse(part, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float number))
+            {
+                return number;
+            }
+
+            return -1;
+        }
+
+        if ((!scene && (parts[0] != "constant" || parts.Length > WithNumber)) || parts.Length > WithTint || numbers.Any(number => number < 0) || (numbers.Count > 0 && numbers[0] == 0))
+        {
+            throw new CommandLineException($"--rt-ambient {value}: expected scene[:share[:tint]] or constant[:level], share and level above 0, tint 0 to 1");
+        }
+
+        if (!scene)
+        {
+            _options.RtAmbientShare = 0;
+        }
+
+        if (numbers.Count > 0 && scene)
+        {
+            _options.RtAmbientShare = numbers[0];
+        }
+
+        if (numbers.Count > 0 && !scene)
+        {
+            _options.RtAmbientLevel = numbers[0];
+        }
+
+        if (numbers.Count == WithNumber)
+        {
+            _options.RtAmbientTint = Math.Min(numbers[1], 1);
         }
 
         return true;

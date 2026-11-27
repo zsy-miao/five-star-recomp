@@ -41,7 +41,7 @@ internal static unsafe class RtStandIns
         ("shadowmask~CS_TraceShadowRays", new FillValue(1, 1, 1, uint.MaxValue), false, false, "ray-traced shadow mask written fully lit"),
         ("rtdirectionalshadows~", new FillValue(1, 1, 1, uint.MaxValue), false, false, "ray-traced directional shadows written fully lit"),
         ("CS_PPR_Raytrace", new FillValue(0, 0, 0, 0), false, false, "planar reflections written black"),
-        ("CS_ScreenProbes_TemporalResolve", FillValue.Shared(AmbientLevel), true, true, "screen-probe light overwritten with grey 0.6 after it runs"),
+        ("CS_ScreenProbes_TemporalResolve", FillValue.Shared(AmbientLevel), true, true, "screen-probe light overwritten after it runs (a share of the scene's own light, or a grey: AmbientLight)"),
     ];
 
     /// <summary>
@@ -101,7 +101,7 @@ internal static unsafe class RtStandIns
                 return "ray-tracing stand-ins: none filled";
             }
 
-            return "ray-tracing stand-ins (approximate): " + string.Join(", ", used.Select(rule => $"{Rules[rule].Name} {Interlocked.Read(ref FilledByRule[rule])} UAVs")) + $", {Interlocked.Read(ref _shadowCopies)} of them copied into their R9G9B9E5 shadows; {SharedExponentAliases.Summary}";
+            return "ray-tracing stand-ins (approximate): " + string.Join(", ", used.Select(rule => $"{Rules[rule].Name} {Interlocked.Read(ref FilledByRule[rule])} UAVs")) + $", {Interlocked.Read(ref _shadowCopies)} of them copied into their R9G9B9E5 shadows, {AmbientLight.Summary}; {SharedExponentAliases.Summary}";
         }
     }
 
@@ -122,6 +122,7 @@ internal static unsafe class RtStandIns
     /// <summary>A desktop pipeline was built from <paramref name="names"/>: an after-run rule is kept for it (a reused address loses an old one).</summary>
     public static void Named(nint pipeline, string names)
     {
+        AmbientLight.Named(pipeline, names);
         int rule = RuleOf(names);
 
         if (Enabled && ScreenProbeLight && rule >= 0 && Rules[rule].AfterRun)
@@ -153,6 +154,8 @@ internal static unsafe class RtStandIns
         {
             Fill(list, rule, QueueProgress.PipelineName(pipeline));
         }
+
+        AmbientLight.AfterDispatch(list, pipeline);
     }
 
     /// <summary>
@@ -353,6 +356,13 @@ internal static unsafe class RtStandIns
     private static int FillRecords(nint list, DescriptorWindow window, uint pointer, uint first, uint end, int rule, bool barrierFirst, ref FillMisses misses)
     {
         var value = Rules[rule].Value;
+
+        // The screen-probe light's rule writes what the scene measured, or the grey.
+        if (Rules[rule].AfterRun)
+        {
+            value = AmbientLight.Value;
+        }
+
         nint device = ShimContext.Runtime.D3D12X.Objects.DesktopDevice;
         nint cpuStart = DesktopCalls.HeapCpuStart(window.ViewHeap);
         ulong gpuStart = DesktopCalls.HeapGpuStart(window.ViewHeap);
@@ -477,7 +487,7 @@ internal static unsafe class RtStandIns
     }
 
     /// <summary>A UAV barrier on every resource: the fill after the pass's writes, the readers after the fill.</summary>
-    private static void Barrier(nint list)
+    internal static void Barrier(nint list)
     {
         var barrier = new TransitionBarrier { Type = TransitionBarrier.UavType, Resource = 0 };
         BarrierWriter.Write(list, &barrier);

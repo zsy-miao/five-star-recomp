@@ -130,6 +130,15 @@ internal sealed record HostOptions
     /// <summary>Each R9G9B9E5 shadow's first copies are logged with their states (<c>--trace-shadows</c>).</summary>
     public bool TraceShadows { get; set; }
 
+    /// <summary>The share of the scene's cached light the screen-probe light's stand-in writes; 0 for the constant (<c>--rt-ambient</c>).</summary>
+    public float RtAmbientShare { get; set; } = 1;
+
+    /// <summary>How much of the measured colour that share keeps, 0 (a grey of its luminance) to 1 (<c>--rt-ambient scene:share:tint</c>).</summary>
+    public float RtAmbientTint { get; set; }
+
+    /// <summary>The constant grey of the screen-probe light's stand-in (<c>--rt-ambient constant[:level]</c>).</summary>
+    public float RtAmbientLevel { get; set; } = Shims.D3D12X.Binding.RtStandIns.AmbientLevel;
+
     /// <summary>
     /// With <c>--typed-image-views</c>: the programs whose 2D samples filter shared-exponent light themselves, by name part
     /// (<c>--shared-exponent-programs &lt;text,...&gt;</c>; TranslationOptions.SharedExponentPrograms). By default the indirect
