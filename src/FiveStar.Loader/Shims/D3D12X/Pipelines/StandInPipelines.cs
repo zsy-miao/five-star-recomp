@@ -83,6 +83,7 @@ internal sealed unsafe class StandInPipelines
     private long _usedBytes;
     private long _evicted;
     private long _madeAgain;
+    private long _heldUses;
     /// <param name="budget">How long a creation may take before the game gets a stand-in.</param>
     /// <param name="builds">The threads that call the driver (started by the caller).</param>
     /// <param name="heavyBuilds">The same queue, or the thread for pipelines of <see cref="PipelineFactory.HeavyShaderBytes"/> or more, which wait for more memory without holding up the others.</param>
@@ -352,7 +353,8 @@ internal sealed unsafe class StandInPipelines
     [HotPath]
     private bool Built(StandInPipelineObject* standIn)
     {
-        if (Volatile.Read(ref standIn->Desktop) != 0)
+        // Built and set by a list before, or free to be: one the guard holds at its first use is not.
+        if (Volatile.Read(ref standIn->Desktop) != 0 && (standIn->Counted == 1 || !ShaderTableGuard.Holding || Kept((nint)standIn)))
         {
             Volatile.Write(ref standIn->LastUsed, StandInUse.Frame);
 
@@ -371,6 +373,36 @@ internal sealed unsafe class StandInPipelines
 
         return false;
     }
+
+    /// <summary>Whether <paramref name="standIn"/> is a clear, blit, UI or lighting pipeline, which is never given up or held.</summary>
+    private bool Kept(nint standIn)
+    {
+        lock (_gate)
+        {
+            return _essential.Contains(standIn) || _lighting.Contains(standIn);
+        }
+    }
+
+    /// <summary>
+    /// Whether the first use of <paramref name="pipeline"/> is held because the driver's shader tables are nearly full
+    /// (<see cref="ShaderTableGuard"/>): it stays pending, built or not, and nothing of it is started.
+    /// </summary>
+    private bool Held(nint pipeline, ref nint desktop, ref bool pending)
+    {
+        if (!ShaderTableGuard.Holding || Kept(pipeline))
+        {
+            return false;
+        }
+
+        Interlocked.Increment(ref _heldUses);
+        desktop = 0;
+        pending = true;
+
+        return true;
+    }
+
+    /// <summary>Uses of pipelines held at their first use (<see cref="ShaderTableGuard"/>).</summary>
+    public long HeldUses => Interlocked.Read(ref _heldUses);
 
     /// <summary>The first time a list sets a built pipeline: its shader bytes count as held by the driver from now on.</summary>
     private void CountUsed(StandInPipelineObject* standIn)
@@ -465,7 +497,7 @@ internal sealed unsafe class StandInPipelines
         nint desktop = Volatile.Read(ref standIn->Desktop);
         pending = desktop == 0;
 
-        if (Built(standIn))
+        if (Built(standIn) || Held(pipeline, ref desktop, ref pending))
         {
             return desktop;
         }
