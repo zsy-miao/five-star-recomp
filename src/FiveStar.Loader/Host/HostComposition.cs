@@ -106,6 +106,9 @@ internal static class HostComposition
         Shims.D3D12X.Binding.RtStandIns.Enabled = (!options.RayTracing || options.RtTraversal) && !options.NoRtStandIns;
         Shims.D3D12X.Binding.RtStandIns.ScreenProbeLight = !options.RtTraversal;
         Shims.D3D12X.Resources.SharedExponentAliases.Trace = options.TraceShadows;
+        Shims.D3D12X.Binding.AmbientLight.Share = options.RtAmbientShare;
+        Shims.D3D12X.Binding.AmbientLight.Constant = options.RtAmbientLevel;
+        Shims.D3D12X.Binding.AmbientLight.Tint = options.RtAmbientTint;
 
         Shims.D3D12X.Binding.WindowGuard.Enabled = !options.NoWindowGuard;
         Shims.D3D12X.Pipelines.EssentialPipelines.Lighting = !options.NoLightingWaits;
