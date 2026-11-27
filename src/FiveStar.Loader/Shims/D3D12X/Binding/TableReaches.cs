@@ -26,6 +26,7 @@ internal static class TableReaches
     private static readonly ConcurrentDictionary<nint, TableReachEntry[]> Pipelines = new();
     private static readonly ConcurrentDictionary<nint, TableReachEntry[]> Whole = new();
     private static readonly ConcurrentDictionary<string, TableReachEntry[]> ByNames = new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, (int Sgpr, uint Record)[]> StoredByNames = new(StringComparer.Ordinal);
 
     /// <summary>The folder of the extracted FSSM programs (--shader-dir); null reads no reach.</summary>
     public static string? ProgramFolder { get; set; }
@@ -78,6 +79,33 @@ internal static class TableReaches
         return ByNames.GetOrAdd(names, key => Entries(Reach(key), 0));
     }
 
+    /// <summary>
+    /// The records the programs <paramref name="names"/> store textures through (<see cref="StoredRecords"/>): a held
+    /// pass's own outputs, which its stand-in fills; empty without a program folder.
+    /// </summary>
+    public static (int Sgpr, uint Record)[] StoredOfNames(string names)
+    {
+        if (ProgramFolder is null)
+        {
+            return [];
+        }
+
+        return StoredByNames.GetOrAdd(names, key => [.. key.Split(Separator, StringSplitOptions.RemoveEmptyEntries).SelectMany(Stored).Distinct()]);
+    }
+
+    /// <summary>A program's stored records, from its FSSM file (empty when the file is missing or does not decode).</summary>
+    private static IReadOnlyList<(int Sgpr, uint Record)> Stored(string name)
+    {
+        var instructions = Instructions(Source(name));
+
+        if (instructions is null)
+        {
+            return [];
+        }
+
+        return StoredRecords.Find(instructions);
+    }
+
     /// <summary>The records each SGPR's table is read to, over the programs <paramref name="names"/>.</summary>
     private static Dictionary<int, uint> Reach(string names)
     {
@@ -106,25 +134,38 @@ internal static class TableReaches
     {
         return Programs.GetOrAdd(Source(name), source =>
         {
-            var path = Path.Combine(ProgramFolder!, source + ProgramExtension);
+            var instructions = Instructions(source);
 
-            if (!File.Exists(path))
+            if (instructions is null)
             {
                 return new Dictionary<int, uint>();
             }
 
-            try
-            {
-                var bytes = File.ReadAllBytes(path);
-                var config = FssmHeader.Decode(bytes);
-
-                return TableReach.Find(new RdnaDecoder().Disassemble(FssmHeader.ProgramCode(bytes), config.WaveSize ?? Wave64));
-            }
-            catch (Exception exception) when (exception is InvalidDataException or ArgumentException or NotSupportedException)
-            {
-                return new Dictionary<int, uint>();
-            }
+            return TableReach.Find(instructions);
         });
+    }
+
+    /// <summary>The extracted program <paramref name="source"/> disassembled; null when its file is missing or does not decode.</summary>
+    private static IReadOnlyList<Instruction>? Instructions(string source)
+    {
+        var path = Path.Combine(ProgramFolder!, source + ProgramExtension);
+
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            var bytes = File.ReadAllBytes(path);
+            var config = FssmHeader.Decode(bytes);
+
+            return new RdnaDecoder().Disassemble(FssmHeader.ProgramCode(bytes), config.WaveSize ?? Wave64);
+        }
+        catch (Exception exception) when (exception is InvalidDataException or ArgumentException or NotSupportedException)
+        {
+            return null;
+        }
     }
 
     /// <summary>The extracted program a translated one comes from: its name up to <c>_Wrapped</c> (no link, trim or probe suffix).</summary>

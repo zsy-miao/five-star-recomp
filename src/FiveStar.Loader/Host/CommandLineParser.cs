@@ -142,7 +142,7 @@ internal sealed class CommandLineParser
                 return SetDepthFuncOverride(option);
             case "--present-test":
                 return SetPresentTest();
-            case "--raytracing" or "--raytracing-gpu" or "--rt-traversal" or "--no-rt-stand-ins" or "--trace-shadows" or "--rt-ambient":
+            case "--raytracing" or "--raytracing-gpu" or "--rt-traversal" or "--no-rt-stand-ins" or "--rt-stand-ins-reach" or "--trace-shadows" or "--rt-ambient":
                 return SetRayTracing(option);
             case "--xdsp-convolution":
                 return SetXDspConvolution();
@@ -1387,8 +1387,9 @@ internal sealed class CommandLineParser
 
     /// <summary>
     /// --raytracing (the DLL's CPU paths), --raytracing-gpu (the inventory of its GPU builder), --rt-traversal (the
-    /// game's traversal programs run, with --raytracing's paths), --no-rt-stand-ins, or --trace-shadows (the R9G9B9E5
-    /// shadows the stand-ins' light is read through); --rt-ambient is <see cref="SetRtAmbient"/>'s.
+    /// game's traversal programs run, with --raytracing's paths), --no-rt-stand-ins, --rt-stand-ins-reach (a held
+    /// pass's fill takes every texture UAV in its reach), or --trace-shadows (the R9G9B9E5 shadows the stand-ins' light
+    /// is read through); --rt-ambient is <see cref="SetRtAmbient"/>'s.
     /// </summary>
     private bool SetRayTracing(string option)
     {
@@ -1397,9 +1398,10 @@ internal sealed class CommandLineParser
             return SetRtAmbient();
         }
 
-        if (option is "--no-rt-stand-ins" or "--trace-shadows")
+        if (option is "--no-rt-stand-ins" or "--rt-stand-ins-reach" or "--trace-shadows")
         {
             _options.NoRtStandIns |= option == "--no-rt-stand-ins";
+            _options.RtStandInsReach |= option == "--rt-stand-ins-reach";
             _options.TraceShadows |= option == "--trace-shadows";
 
             return true;
