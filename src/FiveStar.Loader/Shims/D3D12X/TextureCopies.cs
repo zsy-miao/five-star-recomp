@@ -58,6 +58,11 @@ internal static unsafe class TextureCopies
                 return;
             }
 
+            if (LineViewScan.Enabled)
+            {
+                LineViewScan.Writes(destination, bytes, "CopyMemoryToMemoryX", source);
+            }
+
             GpuBreadcrumbs.Before(self, RecordedCommand.CopyBuffer);
             nint inner = self->Inner;
             var copy = (delegate* unmanaged<nint, nint, ulong, nint, ulong, ulong, void>)ComObject.Slot(inner, DesktopCopyBufferRegion);

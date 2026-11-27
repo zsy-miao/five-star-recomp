@@ -28,8 +28,15 @@ internal static unsafe class BufferCopies
         {
             ListSegments.Of(self)->Commands++;
             IndirectGather.Wrote(self, IndirectGatherMiss.AfterCopy);
+            ulong gameOffset = destinationOffset;
             nint desktopDestination = Desktop(destination, ref destinationOffset);
             nint desktopSource = Desktop(source, ref sourceOffset);
+
+            if (LineViewScan.Enabled)
+            {
+                NoteLineWrite(destination, desktopDestination, gameOffset, destinationOffset, bytes);
+            }
+
             GpuBreadcrumbs.Before(self, RecordedCommand.CopyBuffer);
 
             if (NullAddressCheck.DropsCopy(self, desktopDestination, destinationOffset, desktopSource, sourceOffset, bytes))
@@ -45,6 +52,24 @@ internal static unsafe class BufferCopies
         {
             UnmanagedGuard.Caught(exception, "BufferCopies.CopyBufferRegion");
         }
+    }
+
+    /// <summary>
+    /// <c>--scan-line-views</c>: a copy whose destination, as the desktop gets it, lies in the first 64 KiB of the buffer
+    /// over a game allocation (they start on 4 GiB lines) is reported with the game's own destination.
+    /// </summary>
+    private static void NoteLineWrite(nint wrapper, nint desktop, ulong gameOffset, ulong desktopOffset, ulong bytes)
+    {
+        var d3d12x = ShimContext.Runtime.D3D12X;
+        var resource = d3d12x.Objects.AsResource(wrapper);
+        ulong game = resource == null ? 0 : resource->GameAddress;
+
+        if (game == 0 || !d3d12x.GameMemory.TryFind(game, out var range) || range.Resource != desktop)
+        {
+            return;
+        }
+
+        LineViewScan.Writes(range.GameAddress + desktopOffset, bytes, "CopyBufferRegion (the game's destination 0x" + (game + gameOffset).ToString("x", System.Globalization.CultureInfo.InvariantCulture) + ")", 0);
     }
 
     /// <summary>The desktop buffer holding <paramref name="wrapper"/>'s byte at <paramref name="offset"/>, the offset moved to it.</summary>

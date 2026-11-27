@@ -22,6 +22,7 @@ internal static unsafe class LineViewScan
     private const uint MinRecords = 64;
     private const uint MaxRecords = 1024;
     private const int PerPipeline = 6;
+    private const int WritesLogged = 48;
     private const long PipelineMilliseconds = 5000;
     private const uint HighMask = 0xFFFF;
     private const int StrideShift = 16;
@@ -35,11 +36,35 @@ internal static unsafe class LineViewScan
     private static readonly ConcurrentDictionary<nint, int> Logged = new();
     private static readonly ConcurrentDictionary<uint, ulong> KeptAtLine = new();
 
+    private static long _writes;
+
     [ThreadStatic]
     private static ulong _pending;
 
     /// <summary>Whether the scan runs.</summary>
     public static bool Enabled { get; set; }
+
+    /// <summary>
+    /// A command of the game's list writes <paramref name="bytes"/> at console address <paramref name="address"/>
+    /// (a bottom-of-pipe write, a memory copy, a buffer copy): one into the first <see cref="LineBytes"/> after a
+    /// 4 GiB line is logged, the first <see cref="WritesLogged"/> and then every power of two.
+    /// </summary>
+    public static void Writes(ulong address, ulong bytes, string what, ulong value)
+    {
+        if ((uint)address >= LineBytes || address <= uint.MaxValue)
+        {
+            return;
+        }
+
+        long count = Interlocked.Increment(ref _writes);
+
+        if (count > WritesLogged && (count & (count - 1)) != 0)
+        {
+            return;
+        }
+
+        ShimContext.Runtime.Log.Warn(string.Create(CultureInfo.InvariantCulture, $"[line views] #{count}: {what} writes 0x{bytes:x} bytes at 0x{address:x} (value or source 0x{value:x}), present {ShimContext.Runtime.D3D12X.Presenter.Presents}"));
+    }
 
     /// <summary>The console address of the view a kept heap index names; 0 when it is none made just past a line.</summary>
     public static ulong StartOf(uint desktop)
