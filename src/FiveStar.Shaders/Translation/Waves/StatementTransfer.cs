@@ -20,6 +20,17 @@ internal sealed class StatementTransfer
     /// <summary>Applies one statement; null, or why its effect may not be the console's.</summary>
     public string? Apply(WindowStatement statement)
     {
+        if (statement.Parts.Count > 0)
+        {
+            // A compound of assignments (the halves of a 64-bit result): each keeps the facts an assignment keeps.
+            foreach (var part in statement.Parts)
+            {
+                Apply(part);
+            }
+
+            return null;
+        }
+
         if (statement.Kind is StatementKind.Effect or StatementKind.Other)
         {
             return Opaque(statement);
@@ -124,20 +135,35 @@ internal sealed class StatementTransfer
 
     /// <summary>
     /// A statement of another shape: an effect must read only console values (a guarded one only those it reads when
-    /// the window holds an active lane); what it assigns is exact when everything read is.
+    /// the window holds an active lane); what it assigns is exact when everything read is. What a statement that is
+    /// not an effect (a resource query, a load chosen by a class switch) assigns is uniform when everything it reads
+    /// is, as an assignment's value; an effect's results (an atomic's old value) are each lane's own.
     /// </summary>
     private string? Opaque(WindowStatement statement)
     {
         var calls = statement.Calls.Where(call => !statement.IsAllocation || call != AllocationProbe).ToList();
+        var window = calls.Any(call => ValueRules.IsWindowCall(call, _state));
         var exact = ValueRules.IsExact(statement.Reads, calls, _state);
-        var held = !calls.Any(call => ValueRules.IsWindowCall(call, _state)) && statement.Reads.All(name => _state.Get(name).IsHeld);
+        var held = !window && statement.Reads.All(name => _state.Get(name).IsHeld);
         var guardedHeld = statement.IsGuarded && _state.Get(WindowNames.Active).IsExact && held;
+        var (uniform, allUniform) = (false, false);
 
         string? reason = null;
 
         if (statement.Kind == StatementKind.Effect && !exact && !guardedHeld)
         {
             reason = $"effect on values the window may not share with the console: {statement.Text}";
+        }
+
+        if (statement.Kind == StatementKind.Other && !window && !calls.Any(WindowNames.IsLaneFunction) && !statement.Reads.Any(WindowNames.IsLaneInput))
+        {
+            uniform = statement.Reads.All(name => _state.Get(name).IsActiveUniform);
+
+            // A guarded write leaves the inactive lanes' values: equal on all lanes only when all are active.
+            // A switch with if (active) inside each case is guarded too.
+            var guarded = statement.IsGuarded || statement.Reads.Contains(WindowNames.Active);
+            allUniform = uniform && (!guarded || _state.Get(WindowNames.Active).Full)
+                && statement.Reads.All(name => _state.Get(name).AllUniform == ValueFact.AllBits);
         }
 
         if (statement.IsAllocation)
@@ -148,13 +174,13 @@ internal sealed class StatementTransfer
         // Assigned even with a reason: the facts-only pass (WindowAnalysis.EntryFacts) goes on past it.
         foreach (var target in statement.Assigned)
         {
-            Assigned(target, Bits(exact), Bits(held));
+            Assigned(target, Bits(exact), Bits(held), Bits(uniform), Bits(allUniform));
         }
 
         return reason;
     }
 
-    private void Assigned(string target, uint exact, uint held)
+    private void Assigned(string target, uint exact, uint held, uint uniform, uint allUniform)
     {
         if (target == WindowNames.Active)
         {
@@ -171,7 +197,7 @@ internal sealed class StatementTransfer
             return;
         }
 
-        _state.Set(target, ValueFact.Unknown with { Exact = exact, Held = held });
+        _state.Set(target, new ValueFact(exact, held, uniform, allUniform, MaskKind.Other, false, null));
     }
 
     private static uint Bits(bool all)

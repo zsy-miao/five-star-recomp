@@ -65,6 +65,13 @@ internal sealed partial class WindowStatement
     /// <summary>The functions the statement calls.</summary>
     public IReadOnlyList<string> Calls { get; private init; } = [];
 
+    /// <summary>
+    /// The assignments of a compound <see cref="StatementKind.Other"/> statement that is only assignments in braces
+    /// (<c>if (active) { a = x; b = y; }</c>, a 64-bit multiply or shift's two halves), each guarded when the compound
+    /// is; empty for any other statement.
+    /// </summary>
+    public IReadOnlyList<WindowStatement> Parts { get; private init; } = [];
+
     /// <summary>Runs only on active lanes (<c>if (active) ...</c>).</summary>
     public bool IsGuarded { get; private init; }
 
@@ -149,12 +156,34 @@ internal sealed partial class WindowStatement
         }
 
         var kind = StatementKind.Other;
+        IReadOnlyList<WindowStatement> parts = [];
 
         if (effect)
         {
             kind = StatementKind.Effect;
         }
+        else
+        {
+            parts = PartsOf(text);
+        }
 
+        return new WindowStatement(kind, text)
+        {
+            Reads = Names(text),
+            Calls = Functions(text),
+            Assigned = AssignedBy(text),
+            Parts = parts,
+            IsGuarded = text.StartsWith("if (active) ", StringComparison.Ordinal),
+            IsExport = ExportPattern().IsMatch(text),
+            IsAllocation = AllocationPattern().IsMatch(text),
+            IsBarrier = text.Contains("GroupMemoryBarrier", StringComparison.Ordinal),
+            IsShared = SharedPattern().IsMatch(text),
+        };
+    }
+
+    /// <summary>What a statement of another shape writes: its assignment targets and out-parameters.</summary>
+    private static IReadOnlyList<string> AssignedBy(string text)
+    {
         var assigned = TargetPattern().Matches(text).Select(match => match.Groups[1].Value).Where(name => !Keywords.Contains(name));
 
         if (OutParameterPattern().IsMatch(text))
@@ -163,17 +192,46 @@ internal sealed partial class WindowStatement
             assigned = assigned.Concat(Names(text));
         }
 
-        return new WindowStatement(kind, text)
+        // An atomic writes the old value to its last argument.
+        assigned = assigned.Concat(AtomicResultPattern().Matches(text).Select(match => match.Groups["out"].Value));
+
+        // asuint(double, lo, hi) writes its last two arguments.
+        assigned = assigned.Concat(SplitDoublePattern().Matches(text).SelectMany(match => new[] { match.Groups["lo"].Value, match.Groups["hi"].Value }));
+
+        return [.. assigned.Distinct()];
+    }
+
+    /// <summary>
+    /// The assignments of <c>[if (active) ]{ a = x; b = y; }</c> (closing braces of a compound split over lines may
+    /// follow), as the statements <c>[if (active) ]a = x;</c>; empty unless every piece is a plain assignment.
+    /// </summary>
+    private static IReadOnlyList<WindowStatement> PartsOf(string text)
+    {
+        var compound = CompoundPattern().Match(text);
+
+        if (!compound.Success)
         {
-            Reads = Names(text),
-            Calls = Functions(text),
-            Assigned = [.. assigned.Distinct()],
-            IsGuarded = text.StartsWith("if (active) ", StringComparison.Ordinal),
-            IsExport = ExportPattern().IsMatch(text),
-            IsAllocation = AllocationPattern().IsMatch(text),
-            IsBarrier = text.Contains("GroupMemoryBarrier", StringComparison.Ordinal),
-            IsShared = SharedPattern().IsMatch(text),
-        };
+            return Array.Empty<WindowStatement>();
+        }
+
+        var guard = compound.Groups["guard"].Value;
+        var pieces = compound.Groups["body"].Value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var parts = new List<WindowStatement>(pieces.Length);
+        var expected = guard.Length > 0 ? StatementKind.Guarded : StatementKind.Assign;
+
+        foreach (var piece in pieces)
+        {
+            var part = Parse($"{guard}{piece};");
+
+            if (part.Kind != expected)
+            {
+                return Array.Empty<WindowStatement>();
+            }
+
+            parts.Add(part);
+        }
+
+        return parts;
     }
 
     private static IReadOnlyList<string> NamesOf(string expression)
@@ -256,4 +314,13 @@ internal sealed partial class WindowStatement
 
     [GeneratedRegex(@"\.GetDimensions\(")]
     private static partial Regex OutParameterPattern();
+
+    [GeneratedRegex(@"\basuint\([^;]*, (?<lo>[A-Za-z_]\w*), (?<hi>[A-Za-z_]\w*)\)")]
+    private static partial Regex SplitDoublePattern();
+
+    [GeneratedRegex(@"\bInterlocked\w*\([^;]*?, (?<out>[A-Za-z_]\w*)\)")]
+    private static partial Regex AtomicResultPattern();
+
+    [GeneratedRegex(@"^(?<guard>if \(active\) )?\{ (?<body>[^{}]+;) \}(?: \})*$")]
+    private static partial Regex CompoundPattern();
 }
