@@ -84,18 +84,22 @@ The lighting still reads what the held passes would have written, so their textu
 **Which records.** A held pass's fill takes the records its programs store textures through (`StoredRecords`: the
 table record of each T# an `image_store*` or `image_atomic*` takes, loaded at an immediate offset through a table
 pointer in an entry SGPR). The fill used to take every texture UAV in the programs' reach, which holds other passes'
-textures too. The sun's shadow is one screen texture: `cascadeshadows_classify~CS_ShadowUnifiedClear*` clears it to 0
-(shadowed) per 16-pixel tile, the `cascadeshadows_rendering~CS_ShadowRenderTiled*` passes write sqrt(shadow) for the
-tiles of their lists through records 62 and 63 (offsets 0x7c0, 0x7e0) of the global table in s4, and `TL_PS_*` squares
-what it loads. The tiled distant traces (`CS_RTDistantShadowTrace*_Tiled`) and `CS_RTDistantShadowCopyDepthHalfRes`
-read that table to record 70 and store only through record 10 (and 2) of their own table in s5, so each of their
-skipped dispatches set the cascade shadow textures fully lit, and tiles no later cascade pass wrote showed sunlight on
-shadowed walls (bars of 16-pixel tiles, w357). The log names, per held pass, the records filled and the texture UAVs
-left alone: in w370 records 62 (1280x720 R8G8B8A8_UNORM) and 63 (1280x720 R8_UNORM) of s4 for each trace and the depth
-copy, and nothing else. The traces' own output (s5:10) is an R16_UINT texture, which no fill writes, so the fully-lit
-value reaches the frame only through `CS_RTDistantShadowFinalUpsample`'s output (s5:3). `--rt-stand-ins-reach` fills
-the whole reach as before. The rule that writes after a pass that ran (the screen-probe light) still takes the whole
-reach, by format.
+textures too. The sun's shadow on screen is held in records 62 (1280x720 R8G8B8A8_UNORM) and 63 (R8_UNORM) of the
+global table in s4: the `cascadeshadows_rendering~CS_ShadowRenderTiled*` passes write them for the tiles of their
+lists, and `cascadeshadows_classify~CS_ShadowUnifiedClearRT` writes 0 (in shadow) to record 63 on the tiles classified
+for the ray-traced side. The tiled distant traces (`CS_RTDistantShadowTrace*_Tiled`) and
+`CS_RTDistantShadowCopyDepthHalfRes` read that table to record 70 but store only through record 10 (and 2) of their own
+table in s5, so the old fill set records 62 and 63 fully lit at each skipped trace, and the tiles no cascade pass wrote
+afterwards showed sunlight on shadowed walls (bars of 16-pixel tiles: w357, and w371 with `--rt-stand-ins-reach`;
+gone in w370 and w372). The log names, per held pass, the records filled and the texture UAVs left alone (in w370:
+records 62 and 63 of s4 for each trace and the depth copy). The traces' own output (s5:10, R16_UINT) is an integer
+view, which no fill writes. `--rt-stand-ins-reach` fills the whole reach as before. The rule that writes after a pass
+that ran (the screen-probe light) still takes the whole reach, by format.
+
+The tiles of the ray-traced side keep the clear's 0, so they read in shadow whatever the sun does there: in the
+prologue yard (w372) the sunlit ground shows dark 16-pixel bands between the cascade-written tiles. Making those tiles
+take the cascades (or the classification send every tile to the cascade lists) is open; clearing bits 1 and 6 of
+the tile words `CS_ShadowTileClassify` writes (a `--shader-overrides` test, w373) did not.
 
 | Held pass | Reach (records of s4, s5) | Stored through |
 |---|---|---|
