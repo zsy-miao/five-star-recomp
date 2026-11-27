@@ -375,8 +375,8 @@ internal sealed record HostOptions
     /// <summary>Log the pipelines whose tables hold a buffer V# just past a 4 GiB line (<c>--scan-line-views</c>).</summary>
     public bool ScanLineViews { get; set; }
 
-    /// <summary>With the 4 GiB line watch, the first page after a line with an index run becomes read-only for the CPU (<c>--protect-line-page</c>).</summary>
-    public bool ProtectLinePage { get; set; }
+    /// <summary>With the 4 GiB line watch, hardware write breakpoints at the start of the game's graphics heap name its CPU writers (<c>--break-line-writes</c>).</summary>
+    public bool BreakLineWrites { get; set; }
 
     /// <summary>Programs named with one of these comma-separated texts trace their stores (<c>--trace-stores-of</c>).</summary>
     public string? TraceStoresOf { get; set; }

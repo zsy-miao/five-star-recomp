@@ -39,17 +39,24 @@ internal static unsafe class FourGiBLineWatch
     private const int ShownStores = 12;
 
     private const int PeekBytes = 48;
-    private const uint ProtectedBytes = 4096;
 
     private static readonly ulong[] MeshletLists = [0x11e42000, 0x12042000];
     private const ulong GraphicsHeapBytes = 0x89700000;
 
-    private static readonly HashSet<ulong> Protected = [];
+    /// <summary>Where <c>--break-line-writes</c> breaks in the graphics heap: its first index, an offset inside the id runs, the composite's quad.</summary>
+    private static readonly ulong[] BreakOffsets = [0x0, 0xbf8, 0x1be0];
     private static readonly Dictionary<ulong, ulong> Sizes = [];
     private static readonly ulong[] Traced = new ulong[TraceSlots];
     private static readonly Dictionary<string, (long Stores, ulong Address, uint Value)> Stores = [];
     private static long _storesSeen;
     private static readonly HashSet<ulong> Unreadable = [];
+    private static readonly Dictionary<nint, int> WindowPipelines = [];
+    private static readonly uint[] MarkersNow = new uint[GpuBreadcrumbs.Slots];
+    private static readonly uint[] MarkersAfter = new uint[GpuBreadcrumbs.Slots];
+    private static readonly uint[] MarkersBefore = new uint[GpuBreadcrumbs.Slots];
+    private static bool _markersTaken;
+    private static int _windows;
+    private const int ShownPipelines = 16;
     private static LoaderLog? _log;
     private static ulong[] _since = [];
     private static long _gpuChanges;
@@ -60,8 +67,8 @@ internal static unsafe class FourGiBLineWatch
     /// <summary>Lines watched and changes seen, for the exit summary.</summary>
     public static string Summary => $"[4g lines] {Snapshots.Count} lines watched, {Interlocked.Read(ref _gpuChanges)} changes with GPU work retired, {Interlocked.Read(ref _cpuChanges)} without";
 
-    /// <summary><c>--protect-line-page</c>: the first page after a line with an index run becomes read-only for the CPU.</summary>
-    public static bool ProtectPage { get; set; }
+    /// <summary><c>--break-line-writes</c>: hardware write breakpoints at the start of the game's graphics heap.</summary>
+    public static bool BreakWrites { get; set; }
 
     /// <summary>Whether the watch runs.</summary>
     public static bool Started { get; private set; }
@@ -87,10 +94,12 @@ internal static unsafe class FourGiBLineWatch
             if (now - scanned >= ScanMilliseconds)
             {
                 Scan();
+                WriteBreakpoints.Refresh();
                 scanned = now;
             }
 
             Check();
+            WriteBreakpoints.Drain(_log!);
             Thread.Sleep(PollMilliseconds);
         }
     }
@@ -108,6 +117,7 @@ internal static unsafe class FourGiBLineWatch
             {
                 lines.Insert(0, (ulong)start);
                 Sizes[(ulong)start] = bytes;
+                Break((ulong)start, bytes);
             }
 
             foreach (ulong line in lines)
@@ -133,6 +143,9 @@ internal static unsafe class FourGiBLineWatch
     {
         var completed = QueueProgress.Completed();
         bool retired = Retired(completed);
+
+        // Before the memory is read: a write seen in this check or the next one came after these markers.
+        GpuBreadcrumbs.Snapshot(MarkersNow);
 
         if (PoolStoreTrace.Enabled)
         {
@@ -160,6 +173,8 @@ internal static unsafe class FourGiBLineWatch
         }
 
         _since = completed;
+        MarkersNow.CopyTo(MarkersBefore, 0);
+        _markersTaken = true;
     }
 
     private static void Changed(ulong line, byte[] before, byte[] after, List<(int Offset, int Bytes)> runs, bool retired)
@@ -176,6 +191,11 @@ internal static unsafe class FourGiBLineWatch
         }
 
         long count = Interlocked.Increment(ref _reports);
+
+        if (index)
+        {
+            Window(line);
+        }
 
         if (!index && (!retired || (count > DetailedReports && (count & (count - 1)) != 0)))
         {
@@ -201,7 +221,8 @@ internal static unsafe class FourGiBLineWatch
         if (index)
         {
             Peek(text, line);
-            Protect(text, line);
+            WriteBreakpoints.Summarize(text);
+            Windows(text, line);
         }
 
         foreach (var run in runs.Take(ShownRuns))
@@ -275,20 +296,63 @@ internal static unsafe class FourGiBLineWatch
     }
 
     /// <summary>
-    /// <c>--protect-line-page</c>: once an index run shows on a line, its first 4 KiB become read-only for the CPU, so a
-    /// CPU writer faults there (the fault report names it) while a GPU writer goes on writing.
+    /// <c>--break-line-writes</c>: when the game's 2.2 GiB graphics heap is first seen, every thread gets hardware write
+    /// breakpoints at <see cref="BreakOffsets"/> of it (VirtualProtect fails on the heap, w317): a CPU writer of the id
+    /// runs is logged with its instruction, and a GPU writer raises nothing.
     /// </summary>
-    private static void Protect(StringBuilder text, ulong line)
+    private static void Break(ulong start, ulong bytes)
     {
-        // Only the game's 2.2 GiB graphics heap: other allocations' first bytes are the game's own to write.
-        if (!ProtectPage || Sizes.GetValueOrDefault(line) != GraphicsHeapBytes || !Protected.Add(line))
+        if (!BreakWrites || bytes != GraphicsHeapBytes || WriteBreakpoints.Active || _log is null)
         {
             return;
         }
 
-        uint old = 0;
-        int done = Native.Kernel32.VirtualProtect((nint)line, ProtectedBytes, Native.Win32Constants.PageReadOnly, &old);
-        text.Append(CultureInfo.InvariantCulture, $"\n      its first {ProtectedBytes} bytes are read-only for the CPU from now on (VirtualProtect returned {done}, protection was 0x{old:x})");
+        var addresses = new ulong[BreakOffsets.Length];
+
+        for (int i = 0; i < addresses.Length; i++)
+        {
+            addresses[i] = start + BreakOffsets[i];
+        }
+
+        WriteBreakpoints.Arm(addresses, _log);
+    }
+
+    /// <summary>
+    /// With <c>--d3d12-breadcrumbs</c>: counts, for an index run in the graphics heap, each pipeline and command with an
+    /// operation between the markers taken before the last check read the memory and now, after this check read it:
+    /// the GPU writer's operation is among them every time, the others come and go.
+    /// </summary>
+    private static void Window(ulong line)
+    {
+        if (!GpuBreadcrumbs.Active || !_markersTaken || Sizes.GetValueOrDefault(line) != GraphicsHeapBytes)
+        {
+            return;
+        }
+
+        var pipelines = new HashSet<nint>();
+        GpuBreadcrumbs.Snapshot(MarkersAfter);
+        GpuBreadcrumbs.CollectWindow(MarkersBefore, MarkersAfter, pipelines);
+        _windows++;
+
+        foreach (nint pipeline in pipelines)
+        {
+            WindowPipelines[pipeline] = WindowPipelines.GetValueOrDefault(pipeline) + 1;
+        }
+    }
+
+    private static void Windows(StringBuilder text, ulong line)
+    {
+        if (_windows == 0 || Sizes.GetValueOrDefault(line) != GraphicsHeapBytes)
+        {
+            return;
+        }
+
+        text.Append(CultureInfo.InvariantCulture, $"\n      GPU operations in the {_windows} windows of such changes, by pipeline ({WindowPipelines.Count} in all):");
+
+        foreach (var (pipeline, windows) in WindowPipelines.OrderByDescending(pair => pair.Value).Take(ShownPipelines))
+        {
+            text.Append(CultureInfo.InvariantCulture, $"\n        in {windows}: {QueueProgress.PipelineName(pipeline)}");
+        }
     }
 
     /// <summary>Whether a queue finished work since the last check.</summary>

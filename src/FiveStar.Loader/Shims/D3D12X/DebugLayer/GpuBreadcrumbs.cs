@@ -604,6 +604,46 @@ internal static unsafe class GpuBreadcrumbs
         return appended;
     }
 
+    /// <summary>
+    /// Adds to <paramref name="pipelines"/> the pipeline (or command) of every operation that ran between snapshots
+    /// <paramref name="before"/> and <paramref name="after"/>: those a marker passed, and the one each unfinished
+    /// recording is in, also when its marker did not move (a long dispatch).
+    /// </summary>
+    public static void CollectWindow(uint[] before, uint[] after, HashSet<nint> pipelines)
+    {
+        if (_recordings == null)
+        {
+            return;
+        }
+
+        for (int slot = 0; slot < Recordings; slot++)
+        {
+            var recording = _recordings + slot;
+
+            if (recording->List == 0 || after[slot] >> SerialShift != (recording->Serial & IndexMask))
+            {
+                continue;
+            }
+
+            if (before[slot] == after[slot] && (after[slot] & IndexMask) == Finished)
+            {
+                continue;
+            }
+
+            (int first, int last, _) = Range(recording, before[slot], after[slot]);
+
+            for (int index = first; index <= last; index++)
+            {
+                var kept = Kept(recording, index);
+
+                if (kept != null)
+                {
+                    pipelines.Add(kept->Pipeline);
+                }
+            }
+        }
+    }
+
     /// <summary>The operations a recording went through between two of its markers; the last one may still run.</summary>
     private static (int First, int Last, bool Running) Range(Recording* recording, uint before, uint after)
     {
