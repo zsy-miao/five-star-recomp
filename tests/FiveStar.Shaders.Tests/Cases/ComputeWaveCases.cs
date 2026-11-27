@@ -123,6 +123,7 @@ public static class ComputeWaveCases
             .Append(VccLoopExitCase())
             .Append(ExecLowHalfCase())
             .Append(MaskHighHalfPathCase())
+            .Append(MoveLowHalfAfterMaskCase())
             .Concat(Variants("cs_mask_on_taken_path", MaskOnTakenPathCase))
             .Concat(Variants("cs_integer_on_taken_path", IntegerOnTakenPathCase))
             .Concat(Variants("cs_mask_after_integer", MaskAfterIntegerCase))
@@ -388,6 +389,32 @@ public static class ComputeWaveCases
             """;
 
         return new ComputeCase("cs_mask_high_half_path_w64", Program, 1, _ => [5u]) { Wave = 64, User = [0] };
+    }
+
+    // Wave64: s40 is a lane mask in emission order where the loop head moves it with s_mov_b32, but the head is only
+    // reached from the back edge, where s40 is a count. The move is of one dword: s43 gets the count and s44, the dword
+    // after it, keeps its value (cascadeshadows_classify~CS_WriteRasterClassificationResults keeps the low dword of its
+    // output V# base there; as a mask move it took the high lanes' bits and the lists went to the start of the heap).
+    private static ComputeCase MoveLowHalfAfterMaskCase()
+    {
+        const string Program = """
+            s_mov_b32 s44, 7
+            v_cmp_gt_u32_e64 s[40:41], 4, v0
+            s_mov_b32 s42, 0
+            s_mov_b32 s43, 0
+            s_branch .Lbody
+            .Lhead:
+            s_mov_b32 s43, s40
+            .Lbody:
+            s_add_i32 s40, s42, 10
+            s_add_i32 s42, s42, 1
+            s_cmp_gt_u32 s42, 2
+            s_cbranch_scc0 .Lhead
+            v_mov_b32 v20, s43
+            v_mov_b32 v21, s44
+            """;
+
+        return new ComputeCase("cs_mov32_after_mask_w64", Program, 2, _ => [11u, 7u]) { Wave = 64 };
     }
 
     private static uint LowHalfOff(int lane)
