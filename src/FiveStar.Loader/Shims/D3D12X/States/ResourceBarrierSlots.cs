@@ -193,14 +193,32 @@ internal static unsafe class ResourceBarrierSlots
             return;
         }
 
-        // --dump-frame: a texture leaving a write state is read back first, after the pass that wrote it.
-        if ((current & ~after & FrameStageDump.WriteStates) != 0)
+        Transit(list, states, resource, home, current, after);
+    }
+
+    /// <summary>
+    /// Records a shim texture's move from <paramref name="current"/> to <paramref name="after"/>. Leaving a write state,
+    /// it is first read back for <c>--dump-frame</c> (after the pass that wrote it), and afterwards, when it is the
+    /// source of an R9G9B9E5 shadow, the shadow takes its texels: on the writer's list, before any list can read them
+    /// (<see cref="Resources.SharedExponentAliases.Written"/>).
+    /// </summary>
+    [HotPath]
+    private static void Transit(nint list, ListResourceStates states, nint resource, int home, int current, int after)
+    {
+        bool written = (current & ~after & FrameStageDump.WriteStates) != 0;
+
+        if (written)
         {
             D3D12X.DrawTrace?.Leaving(list, resource, current);
         }
 
         BarrierWriter.Transition(list, resource, current, after);
         states.Set(resource, home, after);
+
+        if (written && Resources.SharedExponentAliases.Any)
+        {
+            Resources.SharedExponentAliases.Written(list, states, resource);
+        }
     }
 
     /// <summary>A resource the shim did not create: moved with the game's own states, when the list's type allows them.</summary>

@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using FiveStar.Loader.Native;
 using FiveStar.Loader.Shims.D3D12X.Present;
+using FiveStar.Loader.Shims.D3D12X.Resources;
 using FiveStar.Loader.Shims.D3D12X.States;
 
 namespace FiveStar.Loader.Shims.D3D12X.Binding;
@@ -57,6 +58,9 @@ internal static unsafe class RtStandIns
     private static readonly int[] EmptyLogged = new int[Rules.Length];
     private static long _filled;
 
+    /// <summary>Filled sources copied into their R9G9B9E5 shadows so far.</summary>
+    private static long _shadowCopies;
+
     /// <summary>The grey of the screen-probe light stand-in (VIctory's 0.6).</summary>
     public const float AmbientLevel = 0.6f;
 
@@ -84,7 +88,7 @@ internal static unsafe class RtStandIns
                 return "ray-tracing stand-ins: none filled";
             }
 
-            return "ray-tracing stand-ins (approximate): " + string.Join(", ", used.Select(rule => $"{Rules[rule].Name} {Interlocked.Read(ref FilledByRule[rule])} UAVs"));
+            return "ray-tracing stand-ins (approximate): " + string.Join(", ", used.Select(rule => $"{Rules[rule].Name} {Interlocked.Read(ref FilledByRule[rule])} UAVs")) + $", {Interlocked.Read(ref _shadowCopies)} of them copied into their R9G9B9E5 shadows; {SharedExponentAliases.Summary}";
         }
     }
 
@@ -171,6 +175,7 @@ internal static unsafe class RtStandIns
         }
 
         Barrier(inner);
+        CopyToShadows(list, ref misses);
         Interlocked.Add(ref _filled, filled);
 
         if (Interlocked.Add(ref FilledByRule[rule], filled) == filled)
@@ -268,10 +273,36 @@ internal static unsafe class RtStandIns
             if (UavFill.Record(device, list, gpuStart, index, view, value))
             {
                 filled++;
+                misses.Note(view.Resource);
             }
         }
 
         return filled;
+    }
+
+    /// <summary>
+    /// The filled textures that are R32_UINT sources of R9G9B9E5 shadows get their texels copied into the shadow on the
+    /// same list (<see cref="SharedExponentAliases.Written"/>). The lighting reads the screen-probe light through
+    /// R9G9B9E5 views, so through the shadows; a shadow is otherwise copied at a list's first read and after a barrier
+    /// on its source, and the fill is a write no barrier announces: in w352 and w353 the sources held the grey and
+    /// nothing of it was in the lit image.
+    /// </summary>
+    private static void CopyToShadows(XboxObject* list, ref FillMisses misses)
+    {
+        if (!SharedExponentAliases.Any)
+        {
+            return;
+        }
+
+        var states = ShimContext.Runtime.D3D12X.ListStates.For(list);
+
+        for (int source = 0; source < misses.Sources; source++)
+        {
+            if (SharedExponentAliases.Written(list->Inner, states, (nint)misses.Filled[source], "a stand-in's fill"))
+            {
+                Interlocked.Increment(ref _shadowCopies);
+            }
+        }
     }
 
     /// <summary>The first fill of a rule that wrote nothing is logged with what its tables held, so a stand-in that never reaches its pass shows why.</summary>
@@ -288,10 +319,25 @@ internal static unsafe class RtStandIns
     /// <summary>What a fill's UAV records held when it did not write them.</summary>
     private struct FillMisses
     {
+        /// <summary>The most filled textures remembered for <see cref="CopyToShadows"/> (the resolve fills 7).</summary>
+        private const int MaxSources = 16;
+
         public int Records;
         public int Unknown;
         public int Refused;
         public int Format;
+
+        /// <summary>The desktop textures filled, the first <see cref="MaxSources"/>.</summary>
+        public fixed long Filled[MaxSources];
+        public int Sources;
+
+        public void Note(nint resource)
+        {
+            if (Sources < MaxSources)
+            {
+                Filled[Sources++] = resource;
+            }
+        }
     }
 
     /// <summary>

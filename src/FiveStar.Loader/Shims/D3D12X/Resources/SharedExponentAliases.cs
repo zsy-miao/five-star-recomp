@@ -46,6 +46,23 @@ internal static unsafe class SharedExponentAliases
 
     public static bool Enabled { get; set; } = true;
 
+    /// <summary><c>--trace-shadows</c>: each shadow's first <see cref="TracedCopies"/> copies are logged with their states.</summary>
+    public static bool Trace { get; set; }
+
+    /// <summary>Copies logged per shadow with <see cref="Trace"/>.</summary>
+    private const int TracedCopies = 6;
+
+    /// <summary>The sample line: shadows made, copies recorded and copies a list's type refused (its states cannot name them).</summary>
+    public static string Summary
+    {
+        get
+        {
+            var aliases = BySource.Values.Where(alias => alias is not null).ToList();
+
+            return $"R9G9B9E5 shadows: {aliases.Count}, {aliases.Sum(alias => alias!.Copies)} copies, {aliases.Sum(alias => alias!.Refused)} refused by a list's legal states";
+        }
+    }
+
     /// <summary>Whether any shadow exists (the draw and barrier hooks do nothing before).</summary>
     public static bool Any => _any;
 
@@ -188,15 +205,50 @@ internal static unsafe class SharedExponentAliases
 
     private static void Read(nint list, ListResourceStates states, uint index)
     {
-        if (!ByIndex.TryGetValue(index, out var alias) || alias.CurrentOn(list))
+        if (ByIndex.TryGetValue(index, out var alias) && !alias.CurrentOn(list))
         {
-            return;
+            Copy(list, states, alias, "a read");
+        }
+    }
+
+    /// <summary>
+    /// The desktop <paramref name="resource"/> was written on <paramref name="list"/> and is written no more for now: a
+    /// barrier took it out of a write state (<see cref="States.ResourceBarrierSlots.Move"/>), or the loader itself
+    /// filled it (a ray-tracing stand-in, which no barrier announces). If it is a source, its shadow gets the texels
+    /// here, on the writer's list, so every list that reads the light afterwards sees them. Whether it is a source.
+    /// <para>
+    /// This is what fills the shadows. The copy at a reader's draw (<see cref="BeforeWork"/>) hardly ever runs: boot
+    /// w355 made 59 shadows and in 780 s recorded 4 copies for a read (18,918 for the stand-in's fills). The views that
+    /// read a shadow are records with a console base, which name no heap index for the window's marks
+    /// (<see cref="WindowRecordIndices.Written"/>), and they are noted here by the game's heap index where the window
+    /// names desktop ones. So the sky view, the probes and the bounced light read a frame from long ago, or black.
+    /// </para>
+    /// </summary>
+    public static bool Written(nint list, ListResourceStates states, nint resource, string why = "the end of its writes")
+    {
+        if (!BySource.TryGetValue(resource, out var alias) || alias is null)
+        {
+            return false;
         }
 
+        Copy(list, states, alias, why);
+
+        return true;
+    }
+
+    /// <summary>Records the copy of <paramref name="alias"/>'s source into its shadow on <paramref name="list"/>, counted and (with <see cref="Trace"/>) logged.</summary>
+    private static void Copy(nint list, ListResourceStates states, SharedExponentAlias alias, string why)
+    {
         var source = alias.Source;
         int sourceState = states.Current(source.Desktop, source.State);
         int shadowState = states.Current(alias.Shadow, SharedExponentCopy.Common);
         int after = SharedExponentCopy.Record(list, alias, sourceState, shadowState, states.LegalStates);
+        long count = alias.Count(after >= 0);
+
+        if (Trace && count <= TracedCopies)
+        {
+            ShimContext.Log?.Info($"  [shadows] copy {count} of source 0x{source.Desktop:x} into shadow 0x{alias.Shadow:x} for {why} on list 0x{list:x} (present {ShimContext.ActiveRuntime?.D3D12X.Presenter.Presents}): source state 0x{sourceState:x}, shadow state 0x{shadowState:x}, legal 0x{states.LegalStates:x}, recorded {after >= 0}; so far {alias.Copies} copied, {alias.Refused} refused");
+        }
 
         if (after < 0)
         {

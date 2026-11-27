@@ -87,6 +87,8 @@ internal static class HostUsage
           --no-shared-exponent-copies
                                  R9G9B9E5 views of R32_UINT light read the texture through the class-3 decode in the
                                  programs, not an R9G9B9E5 shadow the texels are copied into before each read (the default)
+          --trace-shadows        log each R9G9B9E5 shadow's first 6 copies: source, shadow, list, states, whether the
+                                 list's type could record it, and what asked for it (a read, a stand-in's fill)
           --shared-exponent-programs <text,...>
                                  with --typed-image-views, programs whose names hold a text filter sampled R9G9B9E5 light
                                  in R32_UINT themselves (default indirect_diffuse_lighting~; each sample grows a lot)

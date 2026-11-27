@@ -28,6 +28,26 @@ internal sealed class SharedExponentAlias(GpuTexture source, nint shadow, nint b
     /// <summary>The same parts as the shadow lays them out (the same bytes: the texels are as wide).</summary>
     public CopyFootprint[] Read { get; } = read;
 
+    private long _copies;
+    private long _refused;
+
+    /// <summary>Copies recorded so far.</summary>
+    public long Copies => Interlocked.Read(ref _copies);
+
+    /// <summary>Copies not recorded: a state involved was one the list's type cannot name.</summary>
+    public long Refused => Interlocked.Read(ref _refused);
+
+    /// <summary>Counts a copy that was <paramref name="recorded"/> or refused; how many of either so far.</summary>
+    public long Count(bool recorded)
+    {
+        if (recorded)
+        {
+            return Interlocked.Increment(ref _copies) + Refused;
+        }
+
+        return Interlocked.Increment(ref _refused) + Copies;
+    }
+
     /// <summary>Whether <paramref name="list"/> copied the source since it last used it otherwise.</summary>
     public bool CurrentOn(nint list)
     {
