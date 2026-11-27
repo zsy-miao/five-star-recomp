@@ -38,7 +38,7 @@ GTA VI does not run yet. Updated 27 November 2026.
 | Driver shader table has about 160 MiB of headroom | smaller translated shaders |
 | Hair and vehicle bodies missing from surface colour | bring back the remaining skipped skinned passes one by one |
 | GPU writes to game memory in system RAM are slow | video-memory copies; a finer address map |
-| Picture freezes on the white PROLOGUE card after the intro (the game runs on: the prologue's cutscene and first gameplay play behind it) | the game's full-screen quad vertices, 0x1be0 past the 4 GiB line its graphics heap starts on, are overwritten with consecutive ids, so its final composite draws no pixels and the target keeps the card; name the writer with `--watch-4g-lines` |
+| The prologue past its title card (opening credits, prison yard) is monochrome orange, banded and half covered by horizontal bars and blocks (w321; the freeze on the card itself is fixed: a wave64 `s_mov_b32` translated as a mask move sent the cascade-shadow classification lists over the game's quad buffers) | exposure and tiled lighting; re-check with the translator fixes that changed `tiled_lighting~CS_ClusterLightsWorldSpace` and the `InstanceCulling` batch culls |
 | Ray tracing | not built; those passes are held and stand-ins fill some outputs |
 ![Progress](progress.svg)
 

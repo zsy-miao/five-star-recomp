@@ -247,8 +247,23 @@ the vertices read 1,1 / 1,0 / 0,1 and the draw runs 860,160 pixel shader invocat
 1800 all but the first float are consecutive ids (0x451930, 0x451931, ...); from present 2800 the first float is
 overwritten too (0x2050d0f, 0x50c44, ...), the triangle has no area, the draw runs 0 pixel shader invocations and the
 target keeps the frame before. The same kind of index run just past a 4 GiB line faulted two world loads
-([loader.md](loader.md), `--watch-4g-lines`, which names the queue executions around each change). The writer is not
-known yet. Held A presses that land in the cutscene skip it: the game then shows a loading spinner (w280).
+([loader.md](loader.md), `--watch-4g-lines`, which names the queue executions around each change). Held A presses
+that land in the cutscene skip it: the game then shows a loading spinner (w280).
+
+The writer was a translation fault, fixed in the translator. No CPU thread wrote there: hardware write breakpoints on
+the heap's start (`--break-line-writes`, w318) logged the game's own init writes and nothing for 39 later changes of
+the watched bytes. With `--d3d12-breadcrumbs` the watch counts the pipelines with an operation around each change:
+`cascadeshadows_classify~CS_WriteRasterClassificationResults` was the only one in all 256 windows (w319). That
+program appends dwords of `mask << 16 | id` (`v_or3_b32 v37, v2, v1, v3` after two shifts) to 25 lists through the
+V# in `s[12:15]`, and its prefix-sum loop has `s_mov_b32 s11, s8` at a loop head reached only from the back edge.
+`s8` held a lane mask earlier in emission order, so the move was translated as a wave64 mask move, which also wrote
+`s12` (the mask's high lanes): the low dword of the list buffer's base. The lists then went to
+`base_hi:0 + 4 * index`, the start of the heap. On wave64 `s_mov_b32`, the `_b32` logic operations, `s_cselect_b32`
+and `s_bcnt1_i32_b32` are now integer operations of one dword (`SaluEmitter.TryMoveMask`, `ScalarLogicEmitter`).
+With the fix w321 logs no id run in 780 s, the composite draws 860,160 and then 921,600 pixels after present 2800
+with its vertices intact, and the captures show the credits and the prison yard, though with the lighting faults
+that remain. `--hunt-line-writer` (every command list alone, the writing operation named by its breadcrumb) was
+written for the same hunt and has not been run.
 
 ## Pool page watch
 
