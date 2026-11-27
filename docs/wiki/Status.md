@@ -34,11 +34,12 @@ GTA VI does not run yet. Updated 27 November 2026.
 | Problem | Next step |
 |---|---|
 | Lighting pass shades almost no pixels | find why its depth-equal test fails; then directional light and ambient inputs |
-| Brightness bands in the lighting; post chain ruins the frame | find the per-tile input that bands; the NaN target; the pass after TAA that loses the sky |
+| Brightness bands in the lighting | they follow the packed underwater mask the lighting reads; the water passes that write it are being replayed offline |
+| Post chain ruins the frame | the velocity target holds infinities (a divide by a zero previous-frame w); the pass after TAA that loses the sky |
 | Driver shader table has about 160 MiB of headroom | smaller translated shaders |
 | Hair and vehicle bodies missing from surface colour | bring back the remaining skipped skinned passes one by one |
 | GPU writes to game memory in system RAM are slow | video-memory copies; a finer address map |
-| Game stalls on the white PROLOGUE card after the intro | loading stops there; being traced |
+| Picture freezes on the white PROLOGUE card | the game runs on behind it; from the world load a GPU pass overwrites the start of a graphics heap, which holds the quad the final composite draws. Probable writer: meshlet culling output landing at the heap start; being confirmed |
 | Ray tracing | not built; those passes are held and stand-ins fill some outputs |
 ![Progress](progress.svg)
 
