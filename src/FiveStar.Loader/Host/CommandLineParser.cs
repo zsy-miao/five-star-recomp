@@ -162,7 +162,7 @@ internal sealed class CommandLineParser
     {
         switch (option)
         {
-            case "--watch-transient" or "--watch-hang" or "--watch-movies" or "--scan-line-views" or "--break-line-writes" or "--skip-compute-chains" or "--empty-indirect-after-skip" or "--retire-waits-all-queues" or "--no-split-at-waits" or "--user-data-constants" or "--buffer-records-heap-index" or "--typed-buffer-views" or "--check-null-addresses" or "--no-window-guard" or "--trace-pool-stores" or "--watch-pool-pages":
+            case "--watch-transient" or "--watch-hang" or "--watch-movies" or "--scan-line-views" or "--break-line-writes" or "--hunt-line-writer" or "--skip-compute-chains" or "--empty-indirect-after-skip" or "--retire-waits-all-queues" or "--no-split-at-waits" or "--user-data-constants" or "--buffer-records-heap-index" or "--typed-buffer-views" or "--check-null-addresses" or "--no-window-guard" or "--trace-pool-stores" or "--watch-pool-pages":
                 return SetWatch(option);
             case "--watch-4g-lines":
                 return SetFourGiBLines();
@@ -1072,6 +1072,10 @@ internal sealed class CommandLineParser
         else if (option == "--break-line-writes")
         {
             _options.BreakLineWrites = true;
+        }
+        else if (option == "--hunt-line-writer")
+        {
+            _options.HuntLineWriter = true;
         }
         else if (option == "--trace-pool-stores")
         {

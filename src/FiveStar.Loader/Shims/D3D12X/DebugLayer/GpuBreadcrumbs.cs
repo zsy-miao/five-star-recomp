@@ -130,6 +130,59 @@ internal static unsafe class GpuBreadcrumbs
         return Operation(kept, pipelineName);
     }
 
+    /// <summary>
+    /// The operation recording <paramref name="serial"/> is at on the GPU now: 0 before it starts (or when the recording
+    /// is not kept), its last operation once it finished.
+    /// </summary>
+    [HotPath]
+    public static int Position(uint serial)
+    {
+        if (_recordings == null || serial == 0)
+        {
+            return 0;
+        }
+
+        long slot = serial & (Recordings - 1);
+        var recording = _recordings + slot;
+        uint marker = Volatile.Read(ref _markers[slot]);
+
+        if (recording->Serial != serial || marker >> SerialShift != (serial & IndexMask))
+        {
+            return 0;
+        }
+
+        if ((marker & IndexMask) == Finished)
+        {
+            return Math.Max(recording->Operations - 1, 0);
+        }
+
+        return (int)(marker & IndexMask);
+    }
+
+    /// <summary>The window offsets of the root tables noted with operation <paramref name="index"/> of a recording, into <paramref name="tables"/>; how many.</summary>
+    public static int TableOffsets(uint serial, int index, uint* tables)
+    {
+        if (_recordings == null)
+        {
+            return 0;
+        }
+
+        var recording = _recordings + (serial & (Recordings - 1));
+        var kept = recording->Serial == serial ? Kept(recording, index) : null;
+
+        if (kept == null)
+        {
+            return 0;
+        }
+
+        for (int i = 0; i < kept->TableCount; i++)
+        {
+            tables[i] = kept->Tables[i];
+        }
+
+        return kept->TableCount;
+    }
+
     /// <summary>At Reset: the list's next recording takes a slot of its own; 0 when the markers are off.</summary>
     [HotPath]
     public static uint Begin(XboxObject* list)

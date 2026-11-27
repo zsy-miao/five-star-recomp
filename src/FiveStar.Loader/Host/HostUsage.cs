@@ -212,6 +212,9 @@ internal static class HostUsage
           --break-line-writes    with --watch-4g-lines: hardware write breakpoints on every thread at + 0, + 0xbf8 and
                                  + 0x1be0 of the game's 2.2 GiB graphics heap; each CPU write there is logged with
                                  its instruction and stack (a GPU write raises nothing)
+          --hunt-line-writer     with --watch-4g-lines and --d3d12-breadcrumbs: after the first id run at the start of
+                                 the graphics heap every command list runs alone and is watched until it is done; the
+                                 operation that writes there is logged with its tables' records (slow)
           --scan-line-views      log the pipelines whose tables hold a buffer V# in the first 64 KiB after a 4 GiB line
                                  (needs --mirror-table-records reach)
           --d3d12-trace-draws    log what the first draws bind (pipeline, targets, vertex buffers, tables) and read

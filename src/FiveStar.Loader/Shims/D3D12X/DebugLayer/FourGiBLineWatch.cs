@@ -197,6 +197,11 @@ internal static unsafe class FourGiBLineWatch
             Window(line);
         }
 
+        if (index && Sizes.GetValueOrDefault(line) == GraphicsHeapBytes)
+        {
+            LineWriterHunt.Arm(line);
+        }
+
         if (!index && (!retired || (count > DetailedReports && (count & (count - 1)) != 0)))
         {
             return;

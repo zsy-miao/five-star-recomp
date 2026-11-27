@@ -378,6 +378,9 @@ internal sealed record HostOptions
     /// <summary>With the 4 GiB line watch, hardware write breakpoints at the start of the game's graphics heap name its CPU writers (<c>--break-line-writes</c>).</summary>
     public bool BreakLineWrites { get; set; }
 
+    /// <summary>With the 4 GiB line watch and breadcrumbs, command lists run alone and the GPU operation that writes the graphics heap's start is named (<c>--hunt-line-writer</c>).</summary>
+    public bool HuntLineWriter { get; set; }
+
     /// <summary>Programs named with one of these comma-separated texts trace their stores (<c>--trace-stores-of</c>).</summary>
     public string? TraceStoresOf { get; set; }
 

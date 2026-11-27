@@ -573,6 +573,7 @@ internal sealed class LoaderHost
         Shims.D3D12X.Binding.TableReaches.Enabled = _options.MirrorTableReach;
         Shims.D3D12X.DebugLayer.LineViewScan.Enabled = _options.ScanLineViews;
         Shims.D3D12X.DebugLayer.FourGiBLineWatch.BreakWrites = _options.BreakLineWrites;
+        Shims.D3D12X.DebugLayer.LineWriterHunt.Enabled = _options.HuntLineWriter;
     }
 
     private void StartMemoryWatch()
