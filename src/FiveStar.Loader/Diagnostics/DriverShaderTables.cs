@@ -48,6 +48,8 @@ internal static unsafe class DriverShaderTables
     private static string _last = string.Empty;
     private static Func<nint>? _device;
     private static long _created;
+    private static readonly ulong[] _found = new ulong[Tables];
+    private static nint _searched;
     private static long _loaded;
 
     /// <summary>Whether pipelines are followed (<see cref="NoteUsed"/>): set by <see cref="Start"/>.</summary>
@@ -125,6 +127,39 @@ internal static unsafe class DriverShaderTables
         }
 
         return text.ToString();
+    }
+
+    /// <summary>
+    /// The bytes the larger of <paramref name="device"/>'s tables wants now; 0 when the tables are not found (another
+    /// driver). The tables are looked for once per device and their addresses kept.
+    /// </summary>
+    public static long LargestTableBytes(nint device)
+    {
+        if (device == 0)
+        {
+            return 0;
+        }
+
+        if (device != _searched)
+        {
+            _found[0] = Table(device, 0);
+            _found[1] = Table(device, 1);
+            _searched = device;
+        }
+
+        ulong largest = 0;
+
+        foreach (ulong table in _found)
+        {
+            if (table == 0 || !Read(table + EntriesOffset, out ulong entries))
+            {
+                return 0;
+            }
+
+            largest = Math.Max(largest, (uint)entries * EntryBytes);
+        }
+
+        return (long)largest;
     }
 
     /// <summary>The address of table <paramref name="index"/> of <paramref name="device"/>; 0 when it is not found.</summary>

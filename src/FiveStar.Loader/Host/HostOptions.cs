@@ -320,6 +320,12 @@ internal sealed record HostOptions
     /// <summary>The driver's background shader work stays on (<c>--driver-background-work</c>); off by default.</summary>
     public bool DriverBackgroundWork { get; set; }
 
+    /// <summary>The driver's measurements are discarded every few seconds and its background work left on (<c>--discard-driver-measurements</c>): what a machine without developer mode gets, to measure.</summary>
+    public bool DiscardDriverMeasurements { get; set; }
+
+    /// <summary>First uses of pipelines are not held when the driver's shader tables are nearly full (<c>--no-shader-table-guard</c>).</summary>
+    public bool NoShaderTableGuard { get; set; }
+
     /// <summary>MiB of DXIL the built pipelines may hold before unused ones are given up (<c>--pipeline-shader-budget</c>); 0 gives up none.</summary>
     public int PipelineShaderBudget { get; set; } = Shims.D3D12X.Pipelines.PipelineEviction.DefaultBudgetMiB;
     /// <summary>The descriptor window, the address map and the user-data ring in GPU upload heaps where the device has them (<c>--gpu-upload-heaps</c>).</summary>

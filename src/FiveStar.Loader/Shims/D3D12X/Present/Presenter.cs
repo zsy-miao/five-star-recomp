@@ -54,6 +54,8 @@ internal sealed unsafe class Presenter : IDisposable
     private long _first;
     private long _reportStart;
     private bool _described;
+    private bool _windowGone;
+    private ResizeRetry _resize;
 
     public Presenter(XboxObjects objects, OnceLog warnings, LoaderLog log)
     {
@@ -109,7 +111,7 @@ internal sealed unsafe class Presenter : IDisposable
             return HResult.Ok;
         }
 
-        if (PresentNative.IsIconic(_window) != 0)
+        if (PresentNative.IsIconic(_window) != 0 || WindowGone())
         {
             _skipped++;
 
@@ -119,6 +121,27 @@ internal sealed unsafe class Presenter : IDisposable
         Show(source);
 
         return HResult.Ok;
+    }
+
+    /// <summary>
+    /// Whether the window was destroyed (closed while the game still presents): nothing is shown from then on. A
+    /// present to it fails with DXGI_ERROR_INVALID_CALL and a resize with E_ACCESSDENIED (issue #64).
+    /// </summary>
+    [HotPath]
+    private bool WindowGone()
+    {
+        if (!_windowGone && PresentNative.IsWindow(_window) == 0)
+        {
+            _windowGone = true;
+            NoteWindowGone();
+        }
+
+        return _windowGone;
+    }
+
+    private void NoteWindowGone()
+    {
+        _log.Info($"  [present] window 0x{_window:x} is gone (closed): frames are not shown from now on");
     }
 
     /// <summary>Logs the presents so far and their mean interval.</summary>
@@ -150,11 +173,12 @@ internal sealed unsafe class Presenter : IDisposable
     {
         var swapChain = _swapChain!;
         var recorder = _recorder!;
-        var (width, height) = TargetSize(source);
 
-        if (width != swapChain.Width || height != swapChain.Height || source.Format != swapChain.Format)
+        if (!Sized(swapChain, source))
         {
-            Resize(width, height, source.Format);
+            _skipped++;
+
+            return;
         }
 
         if (source.ColorSpace != swapChain.ColorSpace)
@@ -200,6 +224,23 @@ internal sealed unsafe class Presenter : IDisposable
         {
             SampleScreen(source);
         }
+    }
+
+    /// <summary>
+    /// The back buffers at the size and format the frame wants, resized when they differ; false when the frame cannot
+    /// be shown: a resize failed now (retried later, frames going to the old buffers meanwhile) or no buffer is held.
+    /// </summary>
+    private bool Sized(DxgiSwapChain swapChain, PlaneSource source)
+    {
+        var (width, height) = TargetSize(source);
+        bool resize = width != swapChain.Width || height != swapChain.Height || source.Format != swapChain.Format;
+
+        if (resize && _resize.MayTry(_skipped + _presents) && !Resize(width, height, source.Format))
+        {
+            return false;
+        }
+
+        return swapChain.Usable;
     }
 
     /// <summary>The plane's source rect copied into a back buffer of its size.</summary>
@@ -273,6 +314,7 @@ internal sealed unsafe class Presenter : IDisposable
         Volatile.Write(ref _presents, _presents + 1);
         Pipelines.StandInUse.Frame = _presents;
         Pipelines.PipelineEviction.AfterPresent(_presents);
+        Pipelines.ShaderTableGuard.AfterPresent(_presents);
         Pix?.AfterPresent(_presents);
 
         if (_presents <= EarlyPresents)
@@ -360,8 +402,19 @@ internal sealed unsafe class Presenter : IDisposable
     {
         PlaneRect client;
 
-        if (_scaler is null || PresentNative.GetClientRect(_window, &client) == 0 || client.Right <= client.Left || client.Bottom <= client.Top)
+        if (_scaler is null)
         {
+            return (source.Width, source.Height);
+        }
+
+        if (PresentNative.GetClientRect(_window, &client) == 0 || client.Right <= client.Left || client.Bottom <= client.Top)
+        {
+            // No client area to read (the window is going, or has none for a moment): the size stays as it is.
+            if (_swapChain is not null)
+            {
+                return (_swapChain.Width, _swapChain.Height);
+            }
+
             return (source.Width, source.Height);
         }
 
@@ -419,18 +472,28 @@ internal sealed unsafe class Presenter : IDisposable
         }
     }
 
-    private void Resize(uint width, uint height, int format)
+    /// <summary>New back buffers; false when ResizeBuffers failed: the old ones are the targets again (when they could be taken) and it is retried later.</summary>
+    private bool Resize(uint width, uint height, int format)
     {
         _recorder!.WaitIdle(_queue);
         int hr = _swapChain!.Resize(width, height, format);
 
         if (HResult.Failed(hr))
         {
-            _warnings.Warn("present-resize", $"[present] ResizeBuffers({width}x{height}, format {format}) failed: {HResult.Format(hr)}");
+            if (_swapChain.Usable)
+            {
+                _recorder.SetTargets(_swapChain.Buffers);
+            }
 
-            return;
+            if (_resize.Failed(_skipped + _presents))
+            {
+                _log.Warn($"[present] ResizeBuffers({width}x{height}, format {format}) failed: {HResult.Format(hr)}; this frame is not shown, the back buffers stay {_swapChain.Width}x{_swapChain.Height} (held again: {_swapChain.Usable}) and the resize is tried again in {ResizeRetry.RetryFrames} frames");
+            }
+
+            return false;
         }
 
+        _resize.Succeeded();
         _recorder.SetTargets(_swapChain.Buffers);
         _resizes++;
 
@@ -438,6 +501,8 @@ internal sealed unsafe class Presenter : IDisposable
         {
             _log.Info($"  [present] back buffers now {width}x{height}, format {format}");
         }
+
+        return true;
     }
 
     private void ChangeColorSpace(uint colorSpace)

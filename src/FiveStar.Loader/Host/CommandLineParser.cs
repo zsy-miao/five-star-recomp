@@ -721,8 +721,26 @@ internal sealed class CommandLineParser
                 return true;
             case "--max-driver-compiles" or "--compile-ceiling":
                 return SetCompileLimit(option);
+            default:
+                return ApplyShaderTable(option) || ApplyResources(option);
+        }
+    }
+
+    /// <summary>The options about the driver's shader tables (docs/running.md#developer-mode).</summary>
+    private bool ApplyShaderTable(string option)
+    {
+        switch (option)
+        {
             case "--driver-background-work":
                 _options.DriverBackgroundWork = true;
+
+                return true;
+            case "--discard-driver-measurements":
+                _options.DiscardDriverMeasurements = true;
+
+                return true;
+            case "--no-shader-table-guard":
+                _options.NoShaderTableGuard = true;
 
                 return true;
             case "--pipeline-shader-budget":
@@ -730,7 +748,7 @@ internal sealed class CommandLineParser
 
                 return true;
             default:
-                return ApplyResources(option);
+                return false;
         }
     }
 

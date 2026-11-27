@@ -351,6 +351,7 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         Rectangles.Attach(rectangles);
         var standIns = new StandInPipelines(PipelineSlots.CreationBudget, builds, heavyBuilds, warnings);
         PipelineEviction.Attach(standIns, rectangles, _log);
+        ShaderTableGuard.Attach(standIns, () => Objects.DesktopDevice, _log);
 
         var cache = OpenCache(device2);
         var factory = new PipelineFactory(device2, root, library, new ProgramSignatures(programs!), warnings, rectangles, standIns, cache) { Journal = OpenJournal(), Lazy = !_pipelineFolders.EagerBuilds, OnDemand = onDemand };

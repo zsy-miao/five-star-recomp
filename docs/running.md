@@ -165,6 +165,25 @@ save slot. Each starts with an XAsyncRun whose completion routine calls `XAsyncG
 block before it frees the block and the slot's in-use mark; the loader used to block there until the routine
 returned, so the settings load found the slot in use and failed, and the screens came back.
 
+## Developer mode
+
+Turn on Windows developer mode (Settings > System > For developers) before a long session on an NVIDIA card.
+NVIDIA's driver keeps the code of every shader in use in tables that cannot pass 512 MiB, recompiles those shaders
+in the background and keeps the results there too; when a table cannot grow, the driver removes the device (the game
+ends with `device removed, reason 0x887a0005`, no GPU fault, nothing in the Windows event log). The loader turns the
+background recompiles off at start (`ID3D12Device6::SetBackgroundProcessingMode`, `DISABLE_BACKGROUND_WORK`), and
+Windows allows that only in developer mode. Without it the log has
+
+```
+WARN  [d3d12_xs] the driver's background shader work could not be turned off: ID3D12Device6::SetBackgroundProcessingMode(DISABLE_BACKGROUND_WORK) -> 0x887a002d (DXGI_ERROR_SDK_COMPONENT_MISSING: Windows developer mode is off)
+```
+
+and the tables fill within minutes of play (issue #64: 428 MiB after 21 minutes, 285 MiB of it recompiles; with the
+work off they stay near 350 MiB with none). The loader then discards the driver's measurements every 2 s instead (which slowed the recompiles a little in one boot and did not stop them), and
+holds pipelines not used so far as stand-ins once a table is nearly full (their draws are missing, the device
+stays): see `--driver-background-work` and `--no-shader-table-guard` in [loader.md](loader.md). With developer mode
+on the line reads `driver background shader work off -> 0x00000000`.
+
 ## Work folder
 
 | Path | Holds |
