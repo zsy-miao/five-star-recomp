@@ -38,6 +38,14 @@ internal static unsafe class FourGiBLineWatch
     private const int TraceSlots = 5;
     private const int ShownStores = 12;
 
+    private const int PeekBytes = 48;
+    private const uint ProtectedBytes = 4096;
+
+    private static readonly ulong[] MeshletLists = [0x11e42000, 0x12042000];
+    private const ulong GraphicsHeapBytes = 0x89700000;
+
+    private static readonly HashSet<ulong> Protected = [];
+    private static readonly Dictionary<ulong, ulong> Sizes = [];
     private static readonly ulong[] Traced = new ulong[TraceSlots];
     private static readonly Dictionary<string, (long Stores, ulong Address, uint Value)> Stores = [];
     private static long _storesSeen;
@@ -51,6 +59,9 @@ internal static unsafe class FourGiBLineWatch
 
     /// <summary>Lines watched and changes seen, for the exit summary.</summary>
     public static string Summary => $"[4g lines] {Snapshots.Count} lines watched, {Interlocked.Read(ref _gpuChanges)} changes with GPU work retired, {Interlocked.Read(ref _cpuChanges)} without";
+
+    /// <summary><c>--protect-line-page</c>: the first page after a line with an index run becomes read-only for the CPU.</summary>
+    public static bool ProtectPage { get; set; }
 
     /// <summary>Whether the watch runs.</summary>
     public static bool Started { get; private set; }
@@ -96,6 +107,7 @@ internal static unsafe class FourGiBLineWatch
             if (bytes != 0 && (ulong)start % LineChanges.Line == 0)
             {
                 lines.Insert(0, (ulong)start);
+                Sizes[(ulong)start] = bytes;
             }
 
             foreach (ulong line in lines)
@@ -186,6 +198,12 @@ internal static unsafe class FourGiBLineWatch
             TraceStores(text, line, after.Length);
         }
 
+        if (index)
+        {
+            Peek(text, line);
+            Protect(text, line);
+        }
+
         foreach (var run in runs.Take(ShownRuns))
         {
             text.Append("\n      ").Append(LineChanges.Describe(before, after, run, ShownBytes));
@@ -236,6 +254,41 @@ internal static unsafe class FourGiBLineWatch
         {
             text.Append(CultureInfo.InvariantCulture, $"\n        {tally.Stores} by {program}, the last 0x{tally.Address:x} = 0x{tally.Value:x}");
         }
+    }
+
+    /// <summary>
+    /// The first dwords of the game's two visible-meshlet lists (1.0.2.1: 0x11e42000 and 0x12042000 into its 2.2 GiB
+    /// graphics heap, BatchCullMeshlets' output V#s in w312 and w313), beside an index run at the heap's start: whether the
+    /// ids are in their own buffer too.
+    /// </summary>
+    private static void Peek(StringBuilder text, ulong line)
+    {
+        foreach (ulong offset in MeshletLists)
+        {
+            var bytes = Read(line + offset, PeekBytes);
+
+            if (bytes is not null)
+            {
+                text.Append(CultureInfo.InvariantCulture, $"\n      at + 0x{offset:x}: {Convert.ToHexString(bytes)}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// <c>--protect-line-page</c>: once an index run shows on a line, its first 4 KiB become read-only for the CPU, so a
+    /// CPU writer faults there (the fault report names it) while a GPU writer goes on writing.
+    /// </summary>
+    private static void Protect(StringBuilder text, ulong line)
+    {
+        // Only the game's 2.2 GiB graphics heap: other allocations' first bytes are the game's own to write.
+        if (!ProtectPage || Sizes.GetValueOrDefault(line) != GraphicsHeapBytes || !Protected.Add(line))
+        {
+            return;
+        }
+
+        uint old = 0;
+        int done = Native.Kernel32.VirtualProtect((nint)line, ProtectedBytes, Native.Win32Constants.PageReadOnly, &old);
+        text.Append(CultureInfo.InvariantCulture, $"\n      its first {ProtectedBytes} bytes are read-only for the CPU from now on (VirtualProtect returned {done}, protection was 0x{old:x})");
     }
 
     /// <summary>Whether a queue finished work since the last check.</summary>

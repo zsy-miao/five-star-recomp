@@ -209,6 +209,8 @@ internal static class HostUsage
           --watch-movies         log the game's Bink movies: each one's state as it changes, its frame every 5 s
           --trace-stores-of <text,...>  as --trace-pool-stores for the programs named with one of the texts only,
                                  made under a name of their own (the others stay warm)
+          --protect-line-page    with --watch-4g-lines: the first 4 KiB after a line with an index run become read-only
+                                 for the CPU, so a CPU writer faults and is named
           --scan-line-views      log the pipelines whose tables hold a buffer V# in the first 64 KiB after a 4 GiB line
                                  (needs --mirror-table-records reach)
           --d3d12-trace-draws    log what the first draws bind (pipeline, targets, vertex buffers, tables) and read
