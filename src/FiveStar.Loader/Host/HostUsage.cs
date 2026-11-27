@@ -89,6 +89,10 @@ internal static class HostUsage
                                  programs, not an R9G9B9E5 shadow the texels are copied into before each read (the default)
           --trace-shadows        log each R9G9B9E5 shadow's first 6 copies: source, shadow, list, states, whether the
                                  list's type could record it, and what asked for it (a read, a stand-in's fill)
+          --rt-ambient scene[:share[:tint]]|constant[:level]
+                                 what stands in for the screen-probe light while its rays are held: a share (1) of the
+                                 mean of the game's cached screen radiance, measured each frame, as a grey of its
+                                 luminance (tint 0) or with its colour (tint 1); or a constant grey (0.6)
           --shared-exponent-programs <text,...>
                                  with --typed-image-views, programs whose names hold a text filter sampled R9G9B9E5 light
                                  in R32_UINT themselves (default indirect_diffuse_lighting~; each sample grows a lot)
