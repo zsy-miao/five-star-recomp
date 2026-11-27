@@ -42,7 +42,7 @@ GTA VI does not run yet. Updated 27 November 2026.
 | Driver shader table has about 160 MiB of headroom | smaller translated shaders |
 | Hair and vehicle bodies missing from surface colour | bring back the remaining skipped skinned passes one by one |
 | GPU writes to game memory in system RAM are slow | video-memory copies; a finer address map |
-| Bars of sunlight where there should be shadow | tiles classified for ray-traced sun shadows take our "lit" stand-in; make them use the cascade shadows |
+| Dark bands on sunlit ground | tiles the game hands to ray-traced sun shadows read "in shadow"; make them use the cascade shadows |
 | Lamps with shadow slots are dark; ambient is a constant | fill the packed shadow masks; scale the ambient stand-in to the scene |
 | Ray tracing | not built; those passes are held and stand-ins fill some outputs |
 ![Progress](progress.svg)
