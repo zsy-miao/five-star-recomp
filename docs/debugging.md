@@ -232,6 +232,24 @@ paths (Tools > Options) so it finds the `.nvdbg` files; the shaders then show at
 - Whether ntdll keeps honouring `PEB.NtGlobalFlag` set at the create-process event in later Windows releases (checked
   on Windows 11 build 26200).
 
+## Frozen PROLOGUE card
+
+After the intro the picture stays on a white card reading PROLOGUE. The game does not stall: it autosaves
+(`SARC0015`), plays the prologue's cutscene (`int_prolo_int_phone.bk2` on a phone) and gives control (the help box
+"Move around / Move the camera" is drawn over the card); a frame dump there holds a lit prison yard in the G-buffer
+and HDR targets (w301, `--dump-frame 600s`). The card is no movie either: `--watch-movies` shows the title movie
+closed a minute earlier. It is stale content: with `--clear-targets-each-frame` the picture is black (w302).
+
+The final composite (`PS_CompositeNMB` with `VS_PassthroughComposite`, into the 1280x720 R10G10B10A2 target) stops
+rasterizing. Its vertex program scales the quad vertices of vertex buffer 0, 0x38 bytes of float pairs at 0x1be0 past
+the 4 GiB line the game's graphics heap starts on. `--d3d12-trace-pipeline CompositeNMB --d3d12-probe-traced` in w303:
+the vertices read 1,1 / 1,0 / 0,1 and the draw runs 860,160 pixel shader invocations up to present 1500; at present
+1800 all but the first float are consecutive ids (0x451930, 0x451931, ...); from present 2800 the first float is
+overwritten too (0x2050d0f, 0x50c44, ...), the triangle has no area, the draw runs 0 pixel shader invocations and the
+target keeps the frame before. The same kind of index run just past a 4 GiB line faulted two world loads
+([loader.md](loader.md), `--watch-4g-lines`, which names the queue executions around each change). The writer is not
+known yet. Held A presses that land in the cutscene skip it: the game then shows a loading spinner (w280).
+
 ## Pool page watch
 
 `--watch-pool-pages` (`PoolPageWatch`) looks for the GPU write that corrupts the game's small-block pools (the pool
