@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Five Star Recomp contributors.
+// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Diagnostics;
@@ -18,6 +18,7 @@ public sealed unsafe class D3D12XPresentTests
     private const int ScheduleFrameEventSlot = 79;
     private const int WaitFrameEventSlot = 80;
     private const int CreateCommittedResourceSlot = 27;
+    private const int GetDeviceRemovedReasonSlot = 37;
     private const int DefaultHeap = 1;
     private const int Texture2D = 3;
     private const int Rgba8Unorm = 28;
@@ -98,6 +99,66 @@ public sealed unsafe class D3D12XPresentTests
         {
             _ = DestroyWindow(window);
         }
+    }
+
+    /// <summary>
+    /// Issue #64: the window was closed while the game presented. ResizeBuffers on the destroyed window returned
+    /// E_ACCESSDENIED, the next frame was recorded against no back buffers and D3D12 removed the device at its
+    /// ExecuteCommandLists (DXGI_ERROR_INVALID_CALL). Now nothing is shown once the window is gone, and the device stays.
+    /// </summary>
+    [Fact]
+    public void Presents_after_the_window_was_destroyed_show_nothing_and_keep_the_device()
+    {
+        nint window = CreateHiddenWindow(100, 80);
+        var log = new StringWriter();
+        using var test = TestRuntime.Create(log: log);
+
+        var device = new XboxDevice(test);
+        nint queue = device.Queue();
+        nint texture = RenderTarget(device, 64, 32);
+        test.Runtime.D3D12X.Presenter.Window = window;
+
+        nint* resources = stackalloc nint[] { texture };
+        var rect = new PlaneRect { Right = 64, Bottom = 32 };
+        float* destination = stackalloc float[] { 0, 0, 1, 1 };
+        var plane = new PresentPlane { Token = 1, ResourceCount = 1, Resources = resources, SourceRect = &rect, DestinationRect = destination };
+        uint* parameters = stackalloc uint[8];
+        var present = (delegate* unmanaged<nint, uint, PresentPlane*, uint*, int>)XboxDevice.Vtable(queue)[PresentSlot];
+
+        Assert.Equal(0, present(queue, 1, &plane, parameters));
+        Assert.True(DestroyWindow(window) != 0);
+        Assert.Equal(0, present(queue, 1, &plane, parameters));
+        Assert.Equal(0, present(queue, 1, &plane, parameters));
+
+        Assert.Equal(1, test.Runtime.D3D12X.Presenter.Presents);
+        nint desktop = test.Runtime.D3D12X.Objects.DesktopDevice;
+        Assert.Equal(0, ((delegate* unmanaged<nint, int>)(*(nint**)desktop)[GetDeviceRemovedReasonSlot])(desktop));
+        Assert.Contains("is gone (closed): frames are not shown", log.ToString());
+        Assert.DoesNotContain("ResizeBuffers", log.ToString());
+    }
+
+    /// <summary>A failed resize is tried again 30 frames later, then at twice the wait each time up to 960; a success ends the waits.</summary>
+    [Fact]
+    public void A_failed_resize_is_retried_later_and_later()
+    {
+        var retry = default(ResizeRetry);
+        Assert.True(retry.MayTry(100));
+
+        Assert.True(retry.Failed(100));
+        Assert.Equal((false, true), (retry.MayTry(129), retry.MayTry(130)));
+        Assert.False(retry.Failed(130));
+        Assert.Equal((false, true), (retry.MayTry(189), retry.MayTry(190)));
+
+        for (int i = 0; i < 10; i++)
+        {
+            retry.Failed(1000);
+        }
+
+        Assert.Equal((false, true, 12L), (retry.MayTry(1000 + ResizeRetry.LongestWait - 1), retry.MayTry(1000 + ResizeRetry.LongestWait), retry.Failures));
+
+        retry.Succeeded();
+        Assert.True(retry.MayTry(1001));
+        Assert.True(retry.Failed(1001));
     }
 
     [Fact]

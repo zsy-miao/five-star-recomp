@@ -74,6 +74,9 @@ internal sealed unsafe class DxgiSwapChain : IDisposable
 
     public uint ColorSpace { get; private set; }
 
+    /// <summary>Whether every back buffer is held: false after a resize that failed and left none to take again.</summary>
+    public bool Usable => Array.TrueForAll(_buffers, buffer => buffer != 0);
+
     /// <summary>The back buffers (desktop ID3D12Resource), valid until the next <see cref="Resize"/>.</summary>
     public ReadOnlySpan<nint> Buffers => _buffers;
 
@@ -140,6 +143,9 @@ internal sealed unsafe class DxgiSwapChain : IDisposable
 
         if (HResult.Failed(hr))
         {
+            // The swap chain keeps its old buffers: ours again, so that the next frame has targets (Usable says whether).
+            _ = GetBuffers();
+
             return hr;
         }
 
@@ -239,6 +245,8 @@ internal sealed unsafe class DxgiSwapChain : IDisposable
 
             if (HResult.Failed(hr))
             {
+                ReleaseBuffers();
+
                 return hr;
             }
 
