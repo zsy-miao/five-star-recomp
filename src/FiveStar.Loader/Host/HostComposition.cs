@@ -86,6 +86,8 @@ internal static class HostComposition
         Shims.D3D12X.BackgroundProcessing.DiscardOnly = options.DiscardDriverMeasurements;
         Shims.D3D12X.Pipelines.ShaderTableGuard.Enabled = !options.NoShaderTableGuard;
         Shims.D3D12X.Binding.GpuUploadHeaps.Enabled = options.GpuUploadHeaps;
+        Shims.D3D12X.Binding.VramTwins.RefreshPresents = options.VramTwinPresents;
+        Shims.D3D12X.Binding.VramTwins.PoolOnly = options.VramTwinPoolOnly;
 
         Shims.D3D12X.DebugLayer.DrawCensus.Passes = options.CensusPasses;
         Shims.D3D12X.Binding.PassControls.Rules = Shims.D3D12X.Binding.PassRules.Parse(options.HoldPasses, options.StubPasses);

@@ -62,6 +62,7 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         Textures = new GpuTextures(MemorySource, Descriptions, log);
 
         SectionHeaps = new SectionHeaps(log);
+        Binding.VramTwins.Log = log;
         PlacedResources = new XboxPlacedResources(memory, SectionHeaps, Objects, Textures, log);
         GameMemory = new XboxGameMemoryBuffers(Objects, PlacedResources.Addresses, memory.Graphics, log);
         PlacedResources.GameMemory = GameMemory;

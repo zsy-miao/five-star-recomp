@@ -145,6 +145,9 @@ internal static class HostUsage
           --gc-sustained         the GC in SustainedLowLatency mode: no blocking full collections unless memory is low
           --gpu-upload-heaps     the descriptor window, address map and user-data ring in GPU upload heaps (resizable
                                  BAR) where the device has them, not write-combined system memory
+          --vram-twin-ceiling <presents>[,pool]
+                                 a measurement, not for play: programs read game memory from copies in video memory
+                                 made anew only every <presents> presents; the picture is stale or wrong
           --mesh-launch          mesh draws launched by an amplification stage of ours (one record read where the game
                                  wrote it) instead of a clamp pass before each; mesh programs take a 4-byte payload
           --clamp-enhanced-barriers  enhanced barriers on the indirect-argument scratch (one per clamp) instead of

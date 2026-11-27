@@ -61,6 +61,7 @@ internal sealed unsafe class GameMemoryViews
     private readonly Dictionary<(nint Section, ulong Start), HashSet<ulong>> _resident = [];
     private readonly Dictionary<ulong, (nint Section, ulong Start)> _pageWindow = [];
     private readonly Dictionary<AddressRange, List<uint>> _rangePairs = [];
+    private readonly Dictionary<(nint Section, ulong Start), nint> _twinSources = [];
 
     /// <summary>The desktop buffer and byte offset of each view pair's byte 0 (<see cref="Locate"/>).</summary>
     private readonly Dictionary<uint, (nint Buffer, ulong Offset)> _viewSources = [];
@@ -393,12 +394,38 @@ internal sealed unsafe class GameMemoryViews
 
             _buffers[key] = buffer;
             WriteViews(buffer, 0, bytes, pair, true);
+            ReadTwin(window, heap, heapBytes, viewOffset, bytes, pair);
         }
 
         _sectionViews[key] = pair;
         Track(page, window, pair);
 
         return pair;
+    }
+
+    /// <summary><c>--vram-twin-ceiling</c>: the pair's SRV reads the twin of its heap window in video memory (<see cref="VramTwins"/>).</summary>
+    private void ReadTwin((nint Section, ulong Start) window, nint heap, ulong heapBytes, ulong viewOffset, ulong bytes, uint pair)
+    {
+        if (!VramTwins.Enabled || (VramTwins.PoolOnly && heapBytes == VramTwins.GpuPoolWindow))
+        {
+            return;
+        }
+
+        if (!_twinSources.TryGetValue(window, out nint source))
+        {
+            source = DesktopCalls.CreatePlacedBuffer(_device, heap, 0, heapBytes, SectionBufferFlags, CommonState);
+            _twinSources[window] = source;
+        }
+
+        nint twin = VramTwins.Of(_device, source, heapBytes);
+
+        if (twin == 0)
+        {
+            return;
+        }
+
+        var read = BufferViewDescription.RawShaderResource((uint)(bytes / DwordBytes), viewOffset / DwordBytes);
+        DesktopCalls.ShaderResourceView(_device, twin, &read, _cpuStart + (nint)(pair * _increment));
     }
 
     private void Wait((nint Section, ulong Start) window, ulong page)
@@ -520,6 +547,11 @@ internal sealed unsafe class GameMemoryViews
         bool writable = (DesktopFlags(range.Resource) & AllowUnorderedAccess) != 0;
         var map = new Span<byte>(_data, _map.Bytes);
 
+        if (writable && range.Size >= VramTwins.SmallestRange)
+        {
+            VramTwins.Whole(_device, range.Resource, range.Size);
+        }
+
         for (ulong start = 0; start < range.Size; start += ChunkBytes)
         {
             if (_next + PairSize > _end)
@@ -573,6 +605,8 @@ internal sealed unsafe class GameMemoryViews
 
                 return;
             }
+
+            VramTwins.Forget(range.Resource);
 
             if (_rangePairs.Remove(range, out var pairs))
             {
