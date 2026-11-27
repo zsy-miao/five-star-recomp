@@ -124,6 +124,7 @@ public static class ComputeWaveCases
             .Append(ExecLowHalfCase())
             .Append(MaskHighHalfPathCase())
             .Append(MoveLowHalfAfterMaskCase())
+            .Append(LowDwordOperationsOnMaskCase())
             .Concat(Variants("cs_mask_on_taken_path", MaskOnTakenPathCase))
             .Concat(Variants("cs_integer_on_taken_path", IntegerOnTakenPathCase))
             .Concat(Variants("cs_mask_after_integer", MaskAfterIntegerCase))
@@ -415,6 +416,39 @@ public static class ComputeWaveCases
             """;
 
         return new ComputeCase("cs_mov32_after_mask_w64", Program, 2, _ => [11u, 7u]) { Wave = 64 };
+    }
+
+    // Wave64: s_and_b32, s_cselect_b32 and s_bcnt1_i32_b32 on the low dword of a lane mask are integer operations of
+    // that dword: the constant is a bit pattern, the count stops at 32 lanes, and the register after the destination
+    // (s44, s51) keeps its value.
+    private static ComputeCase LowDwordOperationsOnMaskCase()
+    {
+        const string Program = """
+            s_mov_b32 s44, 7
+            s_mov_b32 s51, 9
+            v_cmp_eq_u32_e64 s[40:41], v0, v0
+            v_cmp_ne_u32_e64 s[46:47], v0, v0
+            s_and_b32 s43, s40, 6
+            v_mov_b32 v20, s43
+            v_mov_b32 v21, s44
+            s_cmp_eq_u32 s51, 9
+            s_cselect_b32 s50, s46, s40
+            v_mov_b32 v22, s50
+            v_mov_b32 v23, s51
+            s_bcnt1_i32_b32 s52, s40
+            v_mov_b32 v24, s52
+            """;
+
+        return new ComputeCase("cs_low_dword_ops_on_mask_w64", Program, 5, thread =>
+        {
+            int lanes = Math.Min(thread.WaveSize, 32);
+            uint low = lanes == 32 ? uint.MaxValue : (1u << lanes) - 1;
+
+            return [low & 6, 7u, 0u, 9u, (uint)lanes];
+        })
+        {
+            Wave = 64,
+        };
     }
 
     private static uint LowHalfOff(int lane)

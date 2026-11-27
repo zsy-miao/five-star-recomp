@@ -153,7 +153,10 @@ internal sealed partial class ScalarLogicEmitter
 
     private void Logic(string kind, bool wide, IReadOnlyList<Operand> a)
     {
-        var anyMask = _operands.HoldsMask(a[Source0]) || _operands.HoldsMask(a[Source1]);
+        // A mask operation takes every dword of the masks: on wave64 a _b32 form works on one dword as an integer
+        // (its constant is a bit pattern, and the register after its destination is not written), as SaluEmitter's moves.
+        var whole = wide || !_state.IsWave64;
+        var anyMask = whole && (_operands.HoldsMask(a[Source0]) || _operands.HoldsMask(a[Source1]));
 
         if (anyMask && _operands.IsMask(a[Source0]) && _operands.IsMask(a[Source1]))
         {
@@ -183,8 +186,9 @@ internal sealed partial class ScalarLogicEmitter
     {
         var first = a[Source0];
         var second = a[Source1];
+        var whole = wide || !_state.IsWave64;
 
-        if (_operands.IsMask(first) && _operands.IsMask(second) && (!first.IsImmediate || !second.IsImmediate))
+        if (whole && _operands.IsMask(first) && _operands.IsMask(second) && (!first.IsImmediate || !second.IsImmediate))
         {
             _operands.WriteMask(a[Destination], $"(scc ? {_operands.Mask(first)} : {_operands.Mask(second)})");
 

@@ -203,7 +203,10 @@ internal sealed partial class SaluEmitter
     {
         var source = a[Source0];
 
-        if (_operands.IsMask(source) && !source.IsImmediate)
+        // The lanes of a whole mask; on wave64 the _b32 form counts the bits of one dword.
+        var whole = op.EndsWith("64", StringComparison.Ordinal) || !_state.IsWave64;
+
+        if (whole && _operands.IsMask(source) && !source.IsImmediate)
         {
             _operands.Write(a[Destination], $"{WaveOps.CountBits}({_operands.Mask(source)})");
         }

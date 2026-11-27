@@ -23,14 +23,19 @@ internal static class KeyNames
     private const int Alt = 0x12;
 
     /// <summary>
-    /// Unassigned virtual keys (0x88-0x8F and 0x97-0x9A in WinUser.h) that stand for virtual gamepad buttons in an
-    /// input script: PadA, PadB, PadX, PadY, PadMenu, PadView, and the d-pad as PadUp, PadDown, PadLeft, PadRight. They
-    /// press the button alone, without a keyboard key, and no keyboard reading carries them.
+    /// Unassigned virtual keys (0x88-0x8F and 0x97-0x9E in WinUser.h) that stand for virtual gamepad buttons in an
+    /// input script: PadA, PadB, PadX, PadY, PadMenu, PadView, the d-pad as PadUp, PadDown, PadLeft, PadRight, and the
+    /// left stick pushed to an edge as PadLUp, PadLDown, PadLLeft, PadLRight. They press the button or push the stick
+    /// alone, without a keyboard key, and no keyboard reading carries them.
     /// </summary>
     public const int FirstPadKey = 0x88;
     public const int LastPadKey = 0x8F;
     public const int FirstPadArrow = 0x97;
     public const int LastPadArrow = 0x9A;
+    public const int PadStickUp = 0x9B;
+    public const int PadStickDown = 0x9C;
+    public const int PadStickLeft = 0x9D;
+    public const int PadStickRight = 0x9E;
 
     private const int FirstFunctionKey = 0x70;
     private const int FunctionKeyCount = 24;
@@ -47,6 +52,7 @@ internal static class KeyNames
         ("PadA", FirstPadKey), ("PadB", FirstPadKey + 1), ("PadX", FirstPadKey + 2), ("PadY", FirstPadKey + 3),
         ("PadMenu", FirstPadKey + 4), ("PadView", FirstPadKey + 5),
         ("PadUp", FirstPadArrow), ("PadDown", FirstPadArrow + 1), ("PadLeft", FirstPadArrow + 2), ("PadRight", LastPadArrow),
+        ("PadLUp", PadStickUp), ("PadLDown", PadStickDown), ("PadLLeft", PadStickLeft), ("PadLRight", PadStickRight),
     ];
 
     /// <summary>The virtual gamepad button each pad key presses, from <see cref="FirstPadKey"/> on.</summary>
@@ -87,11 +93,11 @@ internal static class KeyNames
         throw new FormatException($"unknown key name '{name}'");
     }
 
-    /// <summary>Whether a virtual key is an input script's pad key (<see cref="FirstPadKey"/>, <see cref="FirstPadArrow"/>).</summary>
+    /// <summary>Whether a virtual key is an input script's pad key (<see cref="FirstPadKey"/>, <see cref="FirstPadArrow"/>, <see cref="PadStickUp"/>).</summary>
     [HotPath]
     public static bool IsPadKey(int virtualKey)
     {
-        if (virtualKey >= FirstPadArrow && virtualKey <= LastPadArrow)
+        if (virtualKey >= FirstPadArrow && virtualKey <= PadStickRight)
         {
             return true;
         }

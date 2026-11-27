@@ -166,6 +166,8 @@ internal sealed class CommandLineParser
                 return SetWatch(option);
             case "--watch-4g-lines":
                 return SetFourGiBLines();
+            case "--watch-movies" or "--break-line-writes":
+                return SetMoviesOrLineBreaks(option);
             case "--screens":
                 return SetScreensFile();
             case "--audio-capture":
@@ -1060,6 +1062,21 @@ internal sealed class CommandLineParser
         }
 
         _options.D3D12Breadcrumbs = true;
+
+        return true;
+    }
+
+    /// <summary><c>--watch-movies</c> and <c>--break-line-writes</c>.</summary>
+    private bool SetMoviesOrLineBreaks(string option)
+    {
+        if (option == "--watch-movies")
+        {
+            _options.WatchMovies = true;
+        }
+        else
+        {
+            _options.BreakLineWrites = true;
+        }
 
         return true;
     }

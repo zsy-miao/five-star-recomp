@@ -375,6 +375,12 @@ internal sealed record HostOptions
     /// <summary>Follow the game's hang watchdog, main state and loading-screen flags (<c>--watch-hang</c>).</summary>
     public bool WatchHang { get; set; }
 
+    /// <summary>Follow the game's Bink movies: state changes and frame numbers (<c>--watch-movies</c>).</summary>
+    public bool WatchMovies { get; set; }
+
+    /// <summary>With the 4 GiB line watch, hardware write breakpoints at the start of the game's graphics heap name its CPU writers (<c>--break-line-writes</c>).</summary>
+    public bool BreakLineWrites { get; set; }
+
     /// <summary>Skip the rest of a recording's compute after a skipped dispatch (<c>--skip-compute-chains</c>).</summary>
     public bool SkipComputeChains { get; set; }
 
