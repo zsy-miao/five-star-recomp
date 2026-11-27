@@ -203,7 +203,10 @@ internal sealed partial class SaluEmitter
     {
         var source = a[Source0];
 
-        if (_operands.IsMask(source) && !source.IsImmediate)
+        // The lanes of a whole mask; on wave64 the _b32 form counts the bits of one dword.
+        var whole = op.EndsWith("64", StringComparison.Ordinal) || !_state.IsWave64;
+
+        if (whole && _operands.IsMask(source) && !source.IsImmediate)
         {
             _operands.Write(a[Destination], $"{WaveOps.CountBits}({_operands.Mask(source)})");
         }
@@ -262,7 +265,13 @@ internal sealed partial class SaluEmitter
     {
         var source = a[Source0];
 
-        if (_operands.HoldsMask(source))
+        // A move of every dword a mask has. On wave64, s_mov_b32 moves one dword of the pair and leaves the register
+        // after its destination alone: as a mask move it also wrote that register (the mask's high lanes), and it read
+        // its source as a mask where only the emission order had left one there (a loop head reached from its back
+        // edge alone, the source a count by then).
+        bool whole = a[Destination].High > a[Destination].Low || !_state.IsWave64;
+
+        if (whole && _operands.HoldsMask(source))
         {
             _operands.WriteMask(a[Destination], _operands.Mask(source));
 
@@ -271,8 +280,6 @@ internal sealed partial class SaluEmitter
 
         // A constant that sets or clears every lane EXEC holds; any other constant (s_mov_b32 exec_lo, 0xffff0000 on
         // wave64) is an integer write of its bits, which keeps the other half (OperandAccess.Write).
-        bool whole = a[Destination].High > a[Destination].Low || !_state.IsWave64;
-
         if (a[Destination].Key == SpecialRegisters.Exec && source.IsImmediate && whole && (source.Value == 0 || source.Value == AllOnes))
         {
             var constant = source.Value != 0 ? "true" : "false";

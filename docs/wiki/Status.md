@@ -11,12 +11,11 @@ GTA VI does not run yet. Updated 27 November 2026.
   - Surface colour: right for most surfaces since textures the game still uses are no longer retired by their
     neighbours. Characters and clothing draw when the skinned passes are not skipped. Open: hair, vehicle bodies,
     some odd colours.
-  - Lighting: the tiled lighting pass shades its pixels (its depth-equal test cannot work on the GPU after our
-    depth copy; a depth-bounds rule replaces it). With the held scattering passes let through, the sky fills too.
-    Before post-processing a frame is now a recognisable lit scene, with brightness bands 256 pixels wide and 16
-    high and some black blocks.
-  - Post-processing: makes it worse. The final frame has a black sky, flat banded colour and blur; one
-    intermediate target is full of NaN and the depth-of-field passes output zero.
+  - Lighting: sun with cascade shadows, sky, and a stand-in ambient term now reach the frame. The prologue yard
+    reads as the game's sunset scene. Wrong: bars of sunlight on tiles the game hands to ray tracing (our
+    stand-in says "lit"), lamps with shadow slots are dark, skinned bodies are held, some black blocks.
+  - Post-processing: the posterized rings and most of the smear are gone since a translator fix for literal
+    samplers (about 39,000 sample sites read an arbitrary sampler from the heap). Velocity infinities are open.
   - Exposure: not re-checked since lighting shades.
 - **Device loss (NVIDIA):** fixed in one 14-minute boot. The driver gave the device up inside `ExecuteCommandLists`
   when an internal shader table passed its 512 MiB maximum (no timeout, no GPU fault). A third of the table was the
@@ -24,9 +23,11 @@ GTA VI does not run yet. Updated 27 November 2026.
   the table stays at about 350 MiB. Open: the mode may need Windows developer mode; new areas add shaders; an
   RTX 5090 report (#64) loses the device earlier in another way.
 - **Speed:** a world frame takes about 200-400 ms. Targets: 30 fps, then 60.
-- **Translator batch merged (27 November):** translation output changed, so shaders are translated and compiled
-  again on the next run (hours on a first run). It holds wide stores, reused buffer reads, the water-loop and
-  tile-class fixes and #61, #62, #66, #67.
+- **Frozen PROLOGUE card: fixed (27 November).** A translator bug made one cascade-shadow compute program write its
+  lists over the start of a graphics heap, which holds the quad the final composite draws. With the fix the game
+  shows the prologue yard as live 3D past the card, still wrongly lit.
+- **Translation output changed again (27 November):** the translator batch and this fix are on main, so shaders are
+  translated and compiled again on the next run (hours on a first run).
 - **AMD:** world geometry draws since #55.
 
 ## Known problems
@@ -34,11 +35,12 @@ GTA VI does not run yet. Updated 27 November 2026.
 | Problem | Next step |
 |---|---|
 | Lighting pass shades almost no pixels | find why its depth-equal test fails; then directional light and ambient inputs |
-| Brightness bands in the lighting; post chain ruins the frame | find the per-tile input that bands; the NaN target; the pass after TAA that loses the sky |
+| Velocity target holds infinities | a divide by a zero previous-frame w; not traced yet |
 | Driver shader table has about 160 MiB of headroom | smaller translated shaders |
 | Hair and vehicle bodies missing from surface colour | bring back the remaining skipped skinned passes one by one |
 | GPU writes to game memory in system RAM are slow | video-memory copies; a finer address map |
-| Game stalls on the white PROLOGUE card after the intro | loading stops there; being traced |
+| Bars of sunlight where there should be shadow | tiles classified for ray-traced sun shadows take our "lit" stand-in; make them use the cascade shadows |
+| Lamps with shadow slots are dark; ambient is a constant | fill the packed shadow masks; scale the ambient stand-in to the scene |
 | Ray tracing | not built; those passes are held and stand-ins fill some outputs |
 ![Progress](progress.svg)
 

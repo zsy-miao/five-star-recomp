@@ -463,6 +463,11 @@ internal sealed class LoaderHost
             GameHangWatch.Start(_runtime.Images, SampledCounters, _runtime.D3D12X.Fences.DescribeWait, _log);
         }
 
+        if (_options.WatchMovies)
+        {
+            GameMovieWatch.Start(_log);
+        }
+
         StartAudioCapture();
         _runtime.D3D12X.WaitForProgramIndex();
 
@@ -566,6 +571,7 @@ internal sealed class LoaderHost
         Shims.D3D12X.Pipelines.SkippedPipelines.All = _options.NoDraws;
         Shims.D3D12X.Binding.DescriptorWindow.MinTableRecords = _options.MirrorTableRecords;
         Shims.D3D12X.Binding.TableReaches.Enabled = _options.MirrorTableReach;
+        Shims.D3D12X.DebugLayer.FourGiBLineWatch.BreakWrites = _options.BreakLineWrites;
     }
 
     private void StartMemoryWatch()

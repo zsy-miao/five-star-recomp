@@ -132,7 +132,7 @@ internal sealed partial class ScalarArithmeticEmitter
         switch (op)
         {
             case "s_brev_b32":
-                Write(a, $"reversebits({Read(a, Source0)})");
+                ReverseBits(a);
                 break;
             case "s_flbit_i32_b32":
                 Write(a, $"firstbithigh_amd({Read(a, Source0)})");
@@ -163,6 +163,22 @@ internal sealed partial class ScalarArithmeticEmitter
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// s_brev_b32. Of a constant it is written as the constant it gives: programs build an S#'s filter word this way
+    /// (s_brev_b32 s30, 40 is 0x14000000), and a literal S# is known by its four constants (OperandAccess.SamplerIndex).
+    /// </summary>
+    private void ReverseBits(IReadOnlyList<Operand> a)
+    {
+        if (a[Source0].IsImmediate)
+        {
+            Write(a, Hlsl.HexUint(BlockConstants.Reverse(a[Source0].Value)));
+
+            return;
+        }
+
+        Write(a, $"reversebits({Read(a, Source0)})");
     }
 
     private void Carry(bool add, IReadOnlyList<Operand> a)

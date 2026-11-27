@@ -30,6 +30,9 @@ internal static unsafe class PresentNative
     public static extern int IsWindowVisible(nint window);
 
     [DllImport(User)]
+    public static extern int IsWindow(nint window);
+
+    [DllImport(User)]
     public static extern int IsIconic(nint window);
 
     [DllImport(User)]

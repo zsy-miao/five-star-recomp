@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using FiveStar.Loader.Native;
 using FiveStar.Loader.Shims.D3D12X.Present;
+using FiveStar.Loader.Shims.D3D12X.Resources;
 using FiveStar.Loader.Shims.D3D12X.States;
 
 namespace FiveStar.Loader.Shims.D3D12X.Binding;
@@ -40,7 +41,7 @@ internal static unsafe class RtStandIns
         ("shadowmask~CS_TraceShadowRays", new FillValue(1, 1, 1, uint.MaxValue), false, false, "ray-traced shadow mask written fully lit"),
         ("rtdirectionalshadows~", new FillValue(1, 1, 1, uint.MaxValue), false, false, "ray-traced directional shadows written fully lit"),
         ("CS_PPR_Raytrace", new FillValue(0, 0, 0, 0), false, false, "planar reflections written black"),
-        ("CS_ScreenProbes_TemporalResolve", FillValue.Shared(AmbientLevel), true, true, "screen-probe light overwritten with grey 0.6 after it runs"),
+        ("CS_ScreenProbes_TemporalResolve", FillValue.Shared(AmbientLevel), true, true, "screen-probe light overwritten after it runs (a share of the scene's own light, or a grey: AmbientLight)"),
     ];
 
     /// <summary>
@@ -56,6 +57,9 @@ internal static unsafe class RtStandIns
     /// <summary>Whether a rule's fill that wrote nothing was logged (once each).</summary>
     private static readonly int[] EmptyLogged = new int[Rules.Length];
     private static long _filled;
+
+    /// <summary>Filled sources copied into their R9G9B9E5 shadows so far.</summary>
+    private static long _shadowCopies;
 
     /// <summary>The grey of the screen-probe light stand-in (VIctory's 0.6).</summary>
     public const float AmbientLevel = 0.6f;
@@ -84,7 +88,7 @@ internal static unsafe class RtStandIns
                 return "ray-tracing stand-ins: none filled";
             }
 
-            return "ray-tracing stand-ins (approximate): " + string.Join(", ", used.Select(rule => $"{Rules[rule].Name} {Interlocked.Read(ref FilledByRule[rule])} UAVs"));
+            return "ray-tracing stand-ins (approximate): " + string.Join(", ", used.Select(rule => $"{Rules[rule].Name} {Interlocked.Read(ref FilledByRule[rule])} UAVs")) + $", {Interlocked.Read(ref _shadowCopies)} of them copied into their R9G9B9E5 shadows, {AmbientLight.Summary}; {SharedExponentAliases.Summary}";
         }
     }
 
@@ -105,6 +109,7 @@ internal static unsafe class RtStandIns
     /// <summary>A desktop pipeline was built from <paramref name="names"/>: an after-run rule is kept for it (a reused address loses an old one).</summary>
     public static void Named(nint pipeline, string names)
     {
+        AmbientLight.Named(pipeline, names);
         int rule = RuleOf(names);
 
         if (Enabled && ScreenProbeLight && rule >= 0 && Rules[rule].AfterRun)
@@ -136,6 +141,8 @@ internal static unsafe class RtStandIns
         {
             Fill(list, rule, QueueProgress.PipelineName(pipeline));
         }
+
+        AmbientLight.AfterDispatch(list, pipeline);
     }
 
     /// <summary>
@@ -171,6 +178,7 @@ internal static unsafe class RtStandIns
         }
 
         Barrier(inner);
+        CopyToShadows(list, ref misses);
         Interlocked.Add(ref _filled, filled);
 
         if (Interlocked.Add(ref FilledByRule[rule], filled) == filled)
@@ -227,6 +235,13 @@ internal static unsafe class RtStandIns
     private static int FillRecords(nint list, DescriptorWindow window, uint pointer, uint first, uint end, int rule, bool barrierFirst, ref FillMisses misses)
     {
         var value = Rules[rule].Value;
+
+        // The screen-probe light's rule writes what the scene measured, or the grey.
+        if (Rules[rule].AfterRun)
+        {
+            value = AmbientLight.Value;
+        }
+
         nint device = ShimContext.Runtime.D3D12X.Objects.DesktopDevice;
         nint cpuStart = DesktopCalls.HeapCpuStart(window.ViewHeap);
         ulong gpuStart = DesktopCalls.HeapGpuStart(window.ViewHeap);
@@ -268,10 +283,36 @@ internal static unsafe class RtStandIns
             if (UavFill.Record(device, list, gpuStart, index, view, value))
             {
                 filled++;
+                misses.Note(view.Resource);
             }
         }
 
         return filled;
+    }
+
+    /// <summary>
+    /// The filled textures that are R32_UINT sources of R9G9B9E5 shadows get their texels copied into the shadow on the
+    /// same list (<see cref="SharedExponentAliases.Written"/>). The lighting reads the screen-probe light through
+    /// R9G9B9E5 views, so through the shadows; a shadow is otherwise copied at a list's first read and after a barrier
+    /// on its source, and the fill is a write no barrier announces: in w352 and w353 the sources held the grey and
+    /// nothing of it was in the lit image.
+    /// </summary>
+    private static void CopyToShadows(XboxObject* list, ref FillMisses misses)
+    {
+        if (!SharedExponentAliases.Any)
+        {
+            return;
+        }
+
+        var states = ShimContext.Runtime.D3D12X.ListStates.For(list);
+
+        for (int source = 0; source < misses.Sources; source++)
+        {
+            if (SharedExponentAliases.Written(list->Inner, states, (nint)misses.Filled[source], "a stand-in's fill"))
+            {
+                Interlocked.Increment(ref _shadowCopies);
+            }
+        }
     }
 
     /// <summary>The first fill of a rule that wrote nothing is logged with what its tables held, so a stand-in that never reaches its pass shows why.</summary>
@@ -288,10 +329,25 @@ internal static unsafe class RtStandIns
     /// <summary>What a fill's UAV records held when it did not write them.</summary>
     private struct FillMisses
     {
+        /// <summary>The most filled textures remembered for <see cref="CopyToShadows"/> (the resolve fills 7).</summary>
+        private const int MaxSources = 16;
+
         public int Records;
         public int Unknown;
         public int Refused;
         public int Format;
+
+        /// <summary>The desktop textures filled, the first <see cref="MaxSources"/>.</summary>
+        public fixed long Filled[MaxSources];
+        public int Sources;
+
+        public void Note(nint resource)
+        {
+            if (Sources < MaxSources)
+            {
+                Filled[Sources++] = resource;
+            }
+        }
     }
 
     /// <summary>
@@ -310,7 +366,7 @@ internal static unsafe class RtStandIns
     }
 
     /// <summary>A UAV barrier on every resource: the fill after the pass's writes, the readers after the fill.</summary>
-    private static void Barrier(nint list)
+    internal static void Barrier(nint list)
     {
         var barrier = new TransitionBarrier { Type = TransitionBarrier.UavType, Resource = 0 };
         BarrierWriter.Write(list, &barrier);

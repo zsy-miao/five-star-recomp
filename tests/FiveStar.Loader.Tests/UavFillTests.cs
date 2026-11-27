@@ -66,6 +66,63 @@ public sealed unsafe class UavFillTests
         Assert.Equal(FillValue.SharedExponent(0.6f, 0.6f, 0.6f), Read(device, context, arena, textures[2], 4)[0]);
     }
 
+    /// <summary>
+    /// The scene-scaled stand-in: a light image filled (2, 1, 0.5) is measured, and a fill by half its level writes
+    /// (1, 0.5, 0.25) into an R32_UINT view, packed on the GPU as the CPU packs R9G9B9E5.
+    /// </summary>
+    [WarpFact]
+    public void A_fill_by_share_writes_that_share_of_the_measured_light_image()
+    {
+        using var gpu = GpuDevice.CreateWarp(debugLayer: false);
+        var device = gpu.Device;
+        using var heap = device.CreateDescriptorHeap(new Vortice.Direct3D12.DescriptorHeapDescription(DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView, 2, DescriptorHeapFlags.ShaderVisible));
+        using var context = new CommandContext(device);
+        using var arena = new ResourceArena(device);
+
+        var increment = device.GetDescriptorHandleIncrementSize(DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView);
+        Format[] formats = [Format.R16G16B16A16_Float, Format.R32_UInt];
+        var textures = new List<ID3D12Resource>();
+        var views = new List<UavView>();
+        uint* words = stackalloc uint[6];
+
+        for (uint index = 0; index < formats.Length; index++)
+        {
+            var description = Vortice.Direct3D12.ResourceDescription.Texture2D(formats[index], Size, Size, 1, 1, flags: ResourceFlags.AllowUnorderedAccess);
+            textures.Add(device.CreateCommittedResource(HeapType.Default, description, ResourceStates.UnorderedAccess));
+            var view = new UnorderedAccessViewDescription { Format = formats[index], ViewDimension = UnorderedAccessViewDimension.Texture2D };
+            device.CreateUnorderedAccessView(textures[(int)index], null, view, heap.GetCPUDescriptorHandleForHeapStart() + (int)(index * increment));
+            (words[0], words[1], words[4]) = ((uint)formats[index], (uint)UnorderedAccessViewDimension.Texture2D, 1);
+            views.Add(UavViews.Of(Resource(description), words)!.Value);
+        }
+
+        ulong start = heap.GetGPUDescriptorHandleForHeapStart().Ptr;
+        var steps = new Func<nint, bool>[]
+        {
+            list => UavFill.Record(device.NativePointer, list, start, 0, views[0], new FillValue(2, 1, 0.5f, 0)),
+            list => UavFill.Measure(device.NativePointer, list, start, 0, views[0], limit: 16),
+            list => UavFill.Record(device.NativePointer, list, start, 1, views[1], new FillValue(0, 0, 0, 0, Share: 0.5f, Least: 0.01f)),
+        };
+
+        // Each step in its own submission: the next reads what the one before wrote.
+        foreach (var step in steps)
+        {
+            context.List.SetDescriptorHeaps(1, new[] { heap });
+            Assert.True(step(context.List.NativePointer));
+            context.ExecuteAndWait();
+        }
+
+        Assert.True(UavFill.Measured);
+        Assert.Equal(FillValue.SharedExponent(1, 0.5f, 0.25f), Read(device, context, arena, textures[1], 4)[0]);
+
+        // Without tint the same share is a grey of the level's luminance.
+        context.List.SetDescriptorHeaps(1, new[] { heap });
+        Assert.True(UavFill.Record(device.NativePointer, context.List.NativePointer, start, 1, views[1], new FillValue(0, 0, 0, 0, Share: 0.5f, Least: 0.01f, Tint: 0)));
+        context.ExecuteAndWait();
+
+        float grey = ((0.2126f * 2) + 0.7152f + (0.0722f * 0.5f)) * 0.5f;
+        Assert.Equal(FillValue.SharedExponent(grey, grey, grey), Read(device, context, arena, textures[1], 4)[0]);
+    }
+
     [Fact]
     public void The_screen_probe_grey_packs_as_r9g9b9e5()
     {

@@ -87,6 +87,12 @@ internal static class HostUsage
           --no-shared-exponent-copies
                                  R9G9B9E5 views of R32_UINT light read the texture through the class-3 decode in the
                                  programs, not an R9G9B9E5 shadow the texels are copied into before each read (the default)
+          --trace-shadows        log each R9G9B9E5 shadow's first 6 copies: source, shadow, list, states, whether the
+                                 list's type could record it, and what asked for it (a read, a stand-in's fill)
+          --rt-ambient scene[:share[:tint]]|constant[:level]
+                                 what stands in for the screen-probe light while its rays are held: a share (1) of the
+                                 mean of the game's cached screen radiance, measured each frame, as a grey of its
+                                 luminance (tint 0) or with its colour (tint 1); or a constant grey (0.6)
           --shared-exponent-programs <text,...>
                                  with --typed-image-views, programs whose names hold a text filter sampled R9G9B9E5 light
                                  in R32_UINT themselves (default indirect_diffuse_lighting~; each sample grows a lot)
@@ -213,6 +219,10 @@ internal static class HostUsage
           --trace-pool-stores    programs made on demand log their stores into the transient pool and the game heap
           --watch-hang           log the game's main state, loading-screen flags and heartbeat, and every thread's
                                  stack while the heartbeat its hang watchdog checks stands still
+          --watch-movies         log the game's Bink movies: each one's state as it changes, its frame every 5 s
+          --break-line-writes    with --watch-4g-lines: hardware write breakpoints on every thread at + 0, + 0xbf8 and
+                                 + 0x1be0 of the game's 2.2 GiB graphics heap; each CPU write there is logged with
+                                 its instruction and stack (a GPU write raises nothing)
           --d3d12-trace-draws    log what the first draws bind (pipeline, targets, vertex buffers, tables) and read
                                  their render targets back
           --d3d12-trace-pipeline <text,...>  with the draw trace, also log the draws of pipelines named with any of the

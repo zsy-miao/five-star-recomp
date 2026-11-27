@@ -167,20 +167,30 @@ internal static partial class ValueRules
         return new ValueFact(exact, held, uniform, allUniform, MaskKind.Other, false, null);
     }
 
-    /// <summary>readfirstlane: the first active lane's value, the console's in the bits that are equal on all active lanes.</summary>
+    /// <summary>
+    /// readfirstlane: the first active lane's value, on a window holding an active lane the console's in the bits that
+    /// are equal on all lanes, and when the window's active lanes are the console's, in the bits equal on the active
+    /// lanes.
+    /// </summary>
     private static ValueFact FirstLane(ValueFact source, ValueFact active)
     {
-        if (!active.IsExact)
-        {
-            return ValueFact.Scalar with { Exact = 0, Held = 0 };
-        }
-
-        var held = source.Held & source.Uniform;
+        // The prelude's readfirstlane gives 0 on a window without an active lane that does not hold console lane 0.
         var exact = 0u;
+        var held = source.Held & source.AllUniform;
 
         if (active.NonEmpty)
         {
-            exact = source.Exact & source.Uniform;
+            exact = source.Exact & source.AllUniform;
+        }
+
+        if (active.IsExact)
+        {
+            held |= source.Held & source.Uniform;
+
+            if (active.NonEmpty)
+            {
+                exact |= source.Exact & source.Uniform;
+            }
         }
 
         return ValueFact.Scalar with { Exact = exact, Held = held };

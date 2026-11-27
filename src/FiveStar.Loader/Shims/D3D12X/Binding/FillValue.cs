@@ -3,8 +3,13 @@
 
 namespace FiveStar.Loader.Shims.D3D12X.Binding;
 
-/// <summary>What a stand-in fill writes: a colour to float views (alpha 1), <paramref name="Packed"/> to uint views.</summary>
-internal readonly record struct FillValue(float Red, float Green, float Blue, uint Packed)
+/// <summary>
+/// What a stand-in fill writes: a colour to float views (alpha 1), <paramref name="Packed"/> to uint views. With a
+/// <paramref name="Share"/> above 0 it writes that share of the level measured on the GPU instead
+/// (<see cref="UavFill.Measure"/>), at least <paramref name="Least"/> per channel, packed as R9G9B9E5 for uint views;
+/// <paramref name="Tint"/> is how much of the level's colour it keeps (1 all of it, 0 a grey of its luminance).
+/// </summary>
+internal readonly record struct FillValue(float Red, float Green, float Blue, uint Packed, float Share = 0, float Least = 0, float Tint = 1)
 {
     private const int MantissaBits = 9;
     private const int ExponentBias = 15;

@@ -90,6 +90,10 @@ internal static unsafe class Kernel32
     [DllImport(Library, SetLastError = true)]
     public static extern int GetThreadContext(nint thread, byte* context);
 
+    /// <summary>SetThreadContext: <paramref name="context"/> is a 16-byte aligned CONTEXT; its ContextFlags name the registers set.</summary>
+    [DllImport(Library, SetLastError = true)]
+    public static extern int SetThreadContext(nint thread, byte* context);
+
     /// <summary>AddVectoredExceptionHandler: <paramref name="handler"/> is a PVECTORED_EXCEPTION_HANDLER.</summary>
     [DllImport(Library)]
     public static extern nint AddVectoredExceptionHandler(uint first, nint handler);

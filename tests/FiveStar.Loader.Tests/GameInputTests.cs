@@ -56,6 +56,14 @@ public sealed unsafe class GameInputTests
 
         Assert.Equal(GameInputLayout.GamepadDPadDown, VirtualGamepad.Map(config, keys, 0, 0, 0.016f).Buttons);
         Assert.True(KeyNames.IsPadKey(padDown) && !KeyNames.IsKeyboardKey(padDown));
+
+        // And the left stick: PadLUp pushes it forward.
+        int stickUp = KeyNames.Parse("PadLUp")!.Value;
+        keys.Set(padDown, false);
+        keys.Set(stickUp, true);
+
+        Assert.Equal(1f, VirtualGamepad.Map(config, keys, 0, 0, 0.016f).LeftY);
+        Assert.True(KeyNames.IsPadKey(stickUp) && !KeyNames.IsKeyboardKey(stickUp));
     }
 
     [Fact]

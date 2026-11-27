@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+using System.Buffers.Binary;
 using System.Security.Cryptography;
 using FiveStar.Shaders.Cache;
 
@@ -10,7 +11,9 @@ namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
 /// The pipelines the game used, in the order it first used them, across boots: <c>pipelines-used.bin</c> in the
 /// pipeline cache folder (<see cref="PipelineJournalFile"/>). Each record is a game description (every creation slot,
 /// derives included) with its shaders as code-block prefixes, so it names the pipeline whatever the translation: the
-/// next boot builds these at creation, the warm-up builds them first.
+/// next boot builds these at creation, the warm-up builds them first. A record that cannot be written is dropped and
+/// the file cut back to its start, and a damaged record read back names nothing: the journal is a hint, never a
+/// reason for a draw or a boot to fail.
 /// </summary>
 internal sealed class PipelineJournal : IDisposable
 {
@@ -20,15 +23,22 @@ internal sealed class PipelineJournal : IDisposable
     private const byte GraphicsKind = PipelineJournalFile.GraphicsKind;
     private const byte ComputeKind = PipelineJournalFile.ComputeKind;
 
+    /// <summary>A FileStream buffer size that buffers nothing: a record goes to the file in one write, or not at all.</summary>
+    private const int Unbuffered = 1;
+
     private readonly Lock _gate = new();
     private readonly HashSet<string> _known = new(StringComparer.Ordinal);
     private readonly FileStream _file;
-    private readonly BinaryWriter _writer;
+
+    /// <summary>Set when a failed append could not be cut back: nothing more is appended in this run.</summary>
+    private bool _closed;
+
+    /// <summary>Whether a dropped record was logged (once per run).</summary>
+    private bool _warned;
 
     private PipelineJournal(FileStream file, IEnumerable<byte[]> records)
     {
         _file = file;
-        _writer = new BinaryWriter(file);
 
         foreach (var record in records)
         {
@@ -53,7 +63,7 @@ internal sealed class PipelineJournal : IDisposable
     {
         var path = Path.Combine(folder, FileName);
         var records = PipelineJournalFile.Records(path);
-        var file = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
+        var file = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read, Unbuffered);
 
         if (records is null)
         {
@@ -121,8 +131,52 @@ internal sealed class PipelineJournal : IDisposable
     {
         lock (_gate)
         {
-            _writer.Dispose();
             _file.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Writes one record (its length, then its bytes) at the end of <paramref name="file"/> in a single write. When the
+    /// write fails (a full disk: boot w353, whose half-written record then crashed every later boot at its start) the
+    /// file is cut back to where the record started, so the next record starts on a record boundary. Whether it was
+    /// written; <paramref name="intact"/> is false when it was not and the file could not be cut back either.
+    /// </summary>
+    internal static bool Append(Stream file, byte[] record, out bool intact)
+    {
+        long start = file.Position;
+        var framed = new byte[sizeof(int) + record.Length];
+        BinaryPrimitives.WriteInt32LittleEndian(framed, record.Length);
+        record.CopyTo(framed, sizeof(int));
+        intact = true;
+
+        try
+        {
+            file.Write(framed);
+            file.Flush();
+
+            return true;
+        }
+        catch (IOException)
+        {
+            intact = CutBack(file, start);
+
+            return false;
+        }
+    }
+
+    /// <summary>Ends <paramref name="file"/> at <paramref name="start"/> again; whether that worked.</summary>
+    private static bool CutBack(Stream file, long start)
+    {
+        try
+        {
+            file.SetLength(start);
+            file.Position = start;
+
+            return true;
+        }
+        catch (IOException)
+        {
+            return false;
         }
     }
 
@@ -175,18 +229,32 @@ internal sealed class PipelineJournal : IDisposable
             return;
         }
 
+        string hash = Hash(record);
+
         lock (_gate)
         {
-            if (!_known.Add(Hash(record)))
+            if (_closed || !_known.Add(hash))
             {
                 return;
             }
 
-            _writer.Write(record.Length);
-            _writer.Write(record);
+            // Written per record: a boot that crashes keeps what it asked for.
+            if (Append(_file, record, out bool intact))
+            {
+                return;
+            }
 
-            // Flushed per record: a boot that crashes keeps what it asked for.
-            _writer.Flush();
+            // The pipeline is not journalled (a later boot builds it at first use); the game's call goes on.
+            _known.Remove(hash);
+            _closed = !intact;
+
+            if (_warned)
+            {
+                return;
+            }
+
+            _warned = true;
+            ShimContext.Log?.Warn($"[d3d12_xs] pipeline journal: a record could not be written (disk full?) and was dropped; file cut back to its start: {intact} (if not, nothing more is journalled in this run)");
         }
     }
 
@@ -256,8 +324,9 @@ internal sealed class PipelineJournal : IDisposable
 
             return new WarmTarget(index, ReadGraphics(reader), null);
         }
-        catch (EndOfStreamException)
+        catch (Exception exception) when (exception is EndOfStreamException or ArgumentException or FormatException)
         {
+            // A damaged record (a count or length that is not one) names nothing.
             return null;
         }
     }
@@ -288,14 +357,13 @@ internal sealed class PipelineJournal : IDisposable
     private static byte[] ReadBytes(BinaryReader reader)
     {
         var length = reader.ReadInt32();
-        var bytes = reader.ReadBytes(length);
 
-        if (bytes.Length != length)
+        if (length < 0 || length > reader.BaseStream.Length - reader.BaseStream.Position)
         {
             throw new EndOfStreamException();
         }
 
-        return bytes;
+        return reader.ReadBytes(length);
     }
 
     private static string Hash(byte[] record)

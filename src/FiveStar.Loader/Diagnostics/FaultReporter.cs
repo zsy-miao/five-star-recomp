@@ -147,6 +147,9 @@ internal sealed unsafe class FaultReporter
     private nint EmitEntry(delegate* unmanaged<nint, int> handler)
     {
         var code = new X64Emitter();
+
+        // A write breakpoint's single step is noted and continued here, before any managed code (WriteBreakpoints).
+        code.Data(WriteBreakpoints.EntryCode());
         code.Data(TestTlsArray);
         int toNoThread = code.JzForward();
         code.Data(FaultEntryCode.Body((nint)handler, PcToModule(), ModuleBase("coreclr.dll"), ModuleBase("clrjit.dll"), _images.Ranges));

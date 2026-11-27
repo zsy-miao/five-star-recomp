@@ -127,6 +127,18 @@ internal sealed record HostOptions
     /// <summary>R9G9B9E5 views of R32_UINT light read a shadow the texels are copied into (on; <c>--no-shared-exponent-copies</c> leaves the decode to the programs).</summary>
     public bool SharedExponentCopies { get; set; } = true;
 
+    /// <summary>Each R9G9B9E5 shadow's first copies are logged with their states (<c>--trace-shadows</c>).</summary>
+    public bool TraceShadows { get; set; }
+
+    /// <summary>The share of the scene's cached light the screen-probe light's stand-in writes; 0 for the constant (<c>--rt-ambient</c>).</summary>
+    public float RtAmbientShare { get; set; } = 1;
+
+    /// <summary>How much of the measured colour that share keeps, 0 (a grey of its luminance) to 1 (<c>--rt-ambient scene:share:tint</c>).</summary>
+    public float RtAmbientTint { get; set; }
+
+    /// <summary>The constant grey of the screen-probe light's stand-in (<c>--rt-ambient constant[:level]</c>).</summary>
+    public float RtAmbientLevel { get; set; } = Shims.D3D12X.Binding.RtStandIns.AmbientLevel;
+
     /// <summary>
     /// With <c>--typed-image-views</c>: the programs whose 2D samples filter shared-exponent light themselves, by name part
     /// (<c>--shared-exponent-programs &lt;text,...&gt;</c>; TranslationOptions.SharedExponentPrograms). By default the indirect
@@ -380,6 +392,12 @@ internal sealed record HostOptions
 
     /// <summary>Follow the game's hang watchdog, main state and loading-screen flags (<c>--watch-hang</c>).</summary>
     public bool WatchHang { get; set; }
+
+    /// <summary>Follow the game's Bink movies: state changes and frame numbers (<c>--watch-movies</c>).</summary>
+    public bool WatchMovies { get; set; }
+
+    /// <summary>With the 4 GiB line watch, hardware write breakpoints at the start of the game's graphics heap name its CPU writers (<c>--break-line-writes</c>).</summary>
+    public bool BreakLineWrites { get; set; }
 
     /// <summary>Skip the rest of a recording's compute after a skipped dispatch (<c>--skip-compute-chains</c>).</summary>
     public bool SkipComputeChains { get; set; }
