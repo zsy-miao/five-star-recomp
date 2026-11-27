@@ -105,6 +105,8 @@ internal static class HostComposition
         // the passes it leaves held keep theirs, and the screen probes trace their own light.
         Shims.D3D12X.Binding.RtStandIns.Enabled = (!options.RayTracing || options.RtTraversal) && !options.NoRtStandIns;
         Shims.D3D12X.Binding.RtStandIns.ScreenProbeLight = !options.RtTraversal;
+        Shims.D3D12X.Resources.SharedExponentAliases.Trace = options.TraceShadows;
+
         Shims.D3D12X.Binding.WindowGuard.Enabled = !options.NoWindowGuard;
         Shims.D3D12X.Pipelines.EssentialPipelines.Lighting = !options.NoLightingWaits;
         Shims.D3D12X.Resources.MapReadback.Enabled = !options.NoMapReadback;

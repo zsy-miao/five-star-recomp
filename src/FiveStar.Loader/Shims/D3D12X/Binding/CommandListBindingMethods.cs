@@ -1303,6 +1303,14 @@ internal static unsafe class CommandListBindingMethods
             DepthTwins.MarkWriters(self, data, ShimContext.Runtime.D3D12X.Bindings.Window.Records, TableReaches.AllOf(pipeline));
         }
 
+        // The same tables for the R9G9B9E5 shadows: sky_dome~CS_SkyMain reads its sky-view light at records 5 and 6 of a
+        // table of 12, which the tables read past a bind's mirror alone left out, so its shadows were never copied into
+        // and the sky stayed black (w352, w353).
+        if (SharedExponentAliases.Any)
+        {
+            SharedExponentAliases.BeforeWork(self->Inner, ShimContext.Runtime.D3D12X.ListStates.For(self), data, ShimContext.Runtime.D3D12X.Bindings.Window.Records, TableReaches.AllOf(pipeline));
+        }
+
         var entries = TableReaches.Of(pipeline);
 
         if (entries.Length == 0)
@@ -1313,11 +1321,6 @@ internal static unsafe class CommandListBindingMethods
         if (DepthUavs.Any)
         {
             DepthUavs.CheckFirstUse(pipeline, data, ShimContext.Runtime.D3D12X.Bindings.Window.Data);
-        }
-
-        if (SharedExponentAliases.Any)
-        {
-            SharedExponentAliases.BeforeWork(self->Inner, ShimContext.Runtime.D3D12X.ListStates.For(self), data, ShimContext.Runtime.D3D12X.Bindings.Window.Records, entries);
         }
 
         var heaps = ShimContext.Runtime.D3D12X.DescriptorHeaps;
