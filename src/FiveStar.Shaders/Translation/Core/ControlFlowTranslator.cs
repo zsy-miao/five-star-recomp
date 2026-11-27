@@ -19,6 +19,10 @@ internal sealed class ControlFlowTranslator
     // How the block being translated ends, once its terminator has been translated.
     private BlockExit? _exit;
 
+    // Each block's successors, and the SGPR constants every path brings into it (BlockConstants).
+    private SortedDictionary<long, List<long>> _successors = [];
+    private Dictionary<long, Dictionary<int, uint>> _entryConstants = [];
+
     // A first-lane exchange whose result the next block reads first: (resume address, destination, site).
     private (long Resume, string Destination, int Site)? _exchange;
 
@@ -41,6 +45,7 @@ internal sealed class ControlFlowTranslator
         }
 
         var reachable = Reachable(leaders);
+        _entryConstants = BlockConstants.AtEntry(_state.Instructions, leaders, _successors, reachable);
         TranslateBlocks(leaders, reachable);
     }
 
@@ -165,6 +170,7 @@ internal sealed class ControlFlowTranslator
         }
 
         AddFallThrough(successors, last);
+        _successors = successors;
 
         return Walk(successors);
     }
@@ -243,7 +249,7 @@ internal sealed class ControlFlowTranslator
                 _state.Body = [];
                 terminated = false;
                 _exit = null;
-                _state.Constants.Clear();
+                SeedConstants(instruction.Address);
                 ReadExchange(instruction.Address);
             }
 
@@ -254,6 +260,22 @@ internal sealed class ControlFlowTranslator
         }
 
         CloseBlock(current, terminated, null);
+    }
+
+    /// <summary>A block starts with the constants all its predecessors leave in the SGPRs, and no others.</summary>
+    private void SeedConstants(long block)
+    {
+        _state.Constants.Clear();
+
+        if (!_entryConstants.TryGetValue(block, out var constants))
+        {
+            return;
+        }
+
+        foreach (var (register, value) in constants)
+        {
+            _state.Constants[RegisterKey.Sgpr(register)] = value;
+        }
     }
 
     /// <summary>Ends a block; one that has no terminator falls through to <paramref name="next"/> (null: past the end).</summary>

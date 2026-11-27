@@ -33,6 +33,7 @@ public static class PixelMemoryCases
             .. Formats(),
             ImageLoadSample(),
             LiteralSamplers(),
+            LiteralSamplerAcrossBlocks(),
             OffsetsAndTexelCoordinates(),
             ImageLoadInteger(),
             ImageSampleLinear(),
@@ -286,6 +287,48 @@ public static class PixelMemoryCases
 
         // The clamped sample reads column 3; the compare of 0.5 passes from texel 8 on (less or equal).
         return new PixelCase("literal_samplers", Program, 5, pixel => [.. Texel(3, pixel.Y & 3), Lit((pixel.X & 3) + (4 * (pixel.Y & 3)))])
+        {
+            Bindings = bindings,
+        };
+    }
+
+    // A literal S# built before a branch and used after it, its filter word by s_brev_b32 (40 reversed is 0x14000000):
+    // the sample still reads the sampler its words describe (wrap in x, point: one texture width to the right is the
+    // same column), not the sampler heap slot its first dword numbers (0x90, a clamping sampler here: column 3).
+    // PS_CompositeNMB samples its colour LUTs that way.
+    private static PixelCase LiteralSamplerAcrossBlocks()
+    {
+        const string Program = """
+            v_cvt_u32_f32_e32 v10, v2
+            v_cvt_u32_f32_e32 v11, v3
+            v_and_b32_e32 v10, 3, v10
+            v_and_b32_e32 v11, 3, v11
+            v_cvt_f32_u32_e32 v12, v10
+            v_cvt_f32_u32_e32 v13, v11
+            v_add_f32_e32 v12, 0.5, v12
+            v_add_f32_e32 v13, 0.5, v13
+            v_mul_f32_e32 v12, 0x3e800000, v12
+            v_mul_f32_e32 v13, 0x3e800000, v13
+            v_add_f32_e32 v14, 1.0, v12
+            v_mov_b32_e32 v15, v13
+            s_mov_b32 s8, 0x90
+            s_mov_b32 s9, 0xc00000
+            s_brev_b32 s10, 40
+            s_mov_b32 s11, 0
+            s_cmp_eq_u32 s9, 0
+            s_cbranch_scc1 .Lskip
+            image_sample_lz v[20:23], v[14:15], s[0:7], s[8:11] dmask:0xf dim:SQ_RSRC_IMG_2D
+            .Lskip:
+            s_waitcnt vmcnt(0)
+            """;
+        var bindings = new Bindings
+        {
+            UserSgprs = [2, 0, 0, 0, 0, 0, 0, 0],
+            Textures = [new TextureResource(2, Format.R32G32B32A32_Float, 4, 4, FloatTexture())],
+            Samplers = [LiteralSampler([0x90, 0xc00000, 0x14000000, 0], comparison: false)],
+        };
+
+        return new PixelCase("literal_sampler_across_blocks", Program, 4, pixel => [.. Texel(pixel.X & 3, pixel.Y & 3)])
         {
             Bindings = bindings,
         };

@@ -263,10 +263,12 @@ internal sealed partial class OperandAccess
         _state.Touch(key);
         _state.Masks.Add(key);
         _state.MasksEver.Add(key);
+        _state.Constants.Remove(key);
 
         if (_state.IsWave64)
         {
             _state.MaskHighHalves.Add(key.Plus(1));
+            _state.Constants.Remove(key.Plus(1));
         }
     }
 
