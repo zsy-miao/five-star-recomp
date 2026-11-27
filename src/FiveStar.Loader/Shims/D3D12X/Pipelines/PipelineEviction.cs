@@ -27,6 +27,8 @@ internal static class PipelineEviction
     public const int IdleLeast = 150;
     private const int IdleDivisor = 2;
     private const int MiBShift = 20;
+    private const int TightenNumerator = 3;
+    private const int TightenDenominator = 4;
 
     /// <summary>The default budget: none. In boots w241 and w242 nine tenths of the pipelines in use were set again within 150 presents, so little could be given up.</summary>
     public const int DefaultBudgetMiB = 0;
@@ -49,6 +51,23 @@ internal static class PipelineEviction
     public static void SetBudget(int megabytes)
     {
         Budget = (long)megabytes << MiBShift;
+    }
+
+    /// <summary>
+    /// The driver's shader table is nearly at its cap (<see cref="ShaderTableGuard"/>): the budget becomes three
+    /// quarters of the <paramref name="dxil"/> bytes the pipelines in use hold now, unless it is lower already.
+    /// </summary>
+    public static void Tighten(long dxil, LoaderLog? log)
+    {
+        long wanted = dxil / TightenDenominator * TightenNumerator;
+
+        if (wanted <= 0 || (Budget > 0 && Budget <= wanted))
+        {
+            return;
+        }
+
+        Budget = wanted;
+        log?.Warn($"[d3d12_xs] the driver's shader table is nearly full: pipelines unused for a while are given up until the ones in use hold {wanted / MiB:F0} MiB of DXIL (now {dxil / MiB:F0})");
     }
 
     /// <summary>The stand-ins watched and the rectangle variants dropped with a released pipeline.</summary>

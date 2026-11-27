@@ -206,6 +206,50 @@ public sealed unsafe class D3D12XStandInPipelineTests
     }
 
     /// <summary>
+    /// With the driver's shader table nearly full (issue #64: the device is removed when it cannot grow) a pipeline no
+    /// list has set yet stays a stand-in, built or not; one in use goes on, and first uses go on once there is room.
+    /// </summary>
+    [Fact]
+    public void A_first_use_is_held_while_the_shader_table_is_nearly_full()
+    {
+        const long MiB = 1L << 20;
+        using var memory = new NativeBlocks();
+        nint pipeline = FakePipeline(memory);
+        var standIns = StandIns(TimeSpan.Zero);
+        nint used = 0;
+        nint fresh = 0;
+
+        Func<PendingBuild?> prepare = () => new PendingBuild(() => new PipelineResult(HResult.Ok, pipeline), Heavy: false, "held", _ => { }, 1000);
+        standIns.Waiting(_ => Task.CompletedTask, prepare, &used, null, "held");
+        standIns.Waiting(_ => Task.CompletedTask, prepare, &fresh, null, "held");
+        nint first = used;
+        nint second = fresh;
+
+        Assert.True(SpinWait.SpinUntil(() => standIns.Desktop(first, out _) == pipeline, BuildLimit));
+        Assert.True(SpinWait.SpinUntil(() => standIns.Summary.Contains("2 built since", StringComparison.Ordinal), BuildLimit));
+
+        try
+        {
+            ShaderTableGuard.Reset();
+
+            // An estimate alone (no table read, the background work not refused) warns and holds nothing.
+            ShaderTableGuard.Check(0, ShaderTableGuard.HoldMiB * MiB);
+            Assert.False(ShaderTableGuard.Holding);
+
+            ShaderTableGuard.Check(ShaderTableGuard.HoldMiB * MiB, 0);
+            Assert.Equal((pipeline, false), (standIns.Desktop(first, out bool pending), pending));
+            Assert.Equal((0, true, 1L), (standIns.Desktop(second, out pending), pending, standIns.HeldUses));
+
+            ShaderTableGuard.Check(0, ShaderTableGuard.ResumeMiB * MiB / 4);
+            Assert.Equal((pipeline, false), (standIns.Desktop(second, out pending), pending));
+        }
+        finally
+        {
+            ShaderTableGuard.Reset();
+        }
+    }
+
+    /// <summary>
     /// The UI target's clear pair of boot w115: its programs come from the workers after the small budget, the only build
     /// thread is busy with a G-buffer pipeline, and still its first use gets the pipeline rather than a skipped clear.
     /// </summary>

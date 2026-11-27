@@ -152,12 +152,16 @@ internal static class HostUsage
           --typeless-depth       depth textures in a typed depth format made typeless, so the game's shader views read them
           --no-gpu-timeout       the game's command queues without the GPU timeout: long work stalls instead of removing the device
           --d3dkmt-watch         log failing graphics kernel calls (D3DKMT), MarkDeviceAsError and device states: who removes the device
-          --driver-background-work  leave the driver's background shader recompiles on (off by default: their results fill its shader tables)
+          --driver-background-work  leave the driver's background shader recompiles on (off by default: their results fill its shader tables;
+                                 Windows refuses to turn them off without developer mode: the log warns, see docs/running.md)
+          --discard-driver-measurements  leave them on and discard the driver's measurements every 2 s (what a refusal falls back to)
+          --no-shader-table-guard  do not hold the first uses of pipelines when the driver's shader table is nearly full
           --pipeline-shader-budget <MiB>  DXIL the built pipelines may hold before unused ones are given up and rebuilt at their next use (default 0 = never)
           --output WxH           the title renders and presents at one of its modes (1280x720, 1664x936, 1920x1080,
                                  2560x1440, 3840x2160) instead of its settings' 3840x2160; build 1.0.2.1 only
           --gpu-keep-awake       a compute queue of ours runs a small looped dispatch while the game submitted within 250 ms,
-                                 so the GPU's clocks stay up between submissions (--gpu-keep-awake-turns: 20 s on, 20 s off)
+                                 so the GPU's clocks stay up between submissions (--gpu-keep-awake-turns: 20 s on, 20 s off).
+                                 WARNING: on an RTX 5090 it lost the device within 100 to 154 s (DEVICE_HUNG, issue #64)
           --indirect-gather      indirect records nothing earlier in their list segment can have written are clamped in
                                  one prelude before the segment instead of one pass per ExecuteIndirect
           --indirect-gather-strict  as --indirect-gather, but every memory write and dispatch ends gathering

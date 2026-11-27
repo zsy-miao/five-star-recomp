@@ -273,6 +273,7 @@ internal sealed unsafe class Presenter : IDisposable
         Volatile.Write(ref _presents, _presents + 1);
         Pipelines.StandInUse.Frame = _presents;
         Pipelines.PipelineEviction.AfterPresent(_presents);
+        Pipelines.ShaderTableGuard.AfterPresent(_presents);
         Pix?.AfterPresent(_presents);
 
         if (_presents <= EarlyPresents)
