@@ -230,7 +230,7 @@ internal static unsafe class FourGiBLineWatch
         }
 
         PoolStoreTrace.Describe(text, line, (ulong)bytes, ShownStores);
-        text.Append("\n      traced stores into the watched lines by program:");
+        text.Append(CultureInfo.InvariantCulture, $"\n      traced stores into the watched lines by program ({PoolStoreTrace.Kinds}):");
 
         foreach (var (program, tally) in Stores.OrderByDescending(pair => pair.Value.Stores).Take(ShownStores))
         {

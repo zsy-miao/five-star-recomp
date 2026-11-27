@@ -194,7 +194,7 @@ internal sealed class ProgramProducer
 
         if (DebugLayer.PoolStoreTrace.Traces(name))
         {
-            hlsl = DebugLayer.PoolStoreTrace.Header(name) + hlsl;
+            hlsl = DebugLayer.PoolStoreTrace.Header(name) + DebugLayer.PoolStoreTrace.Instrument(hlsl);
         }
 
         RayTracingPrograms.Note(name, hlsl, RayTracingPrograms.Folder ?? _folder);

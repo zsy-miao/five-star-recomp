@@ -122,8 +122,52 @@ internal static unsafe class ViewTrace
 
         for (uint i = 0; i < extent && index + i < views.Count; i++)
         {
-            text.Append(CultureInfo.InvariantCulture, $"\n      table {parameter} entry {i} (record {index + i}): {Resolve(views, index + i)}; dwords {Dwords(views, index + i)}");
+            text.Append(CultureInfo.InvariantCulture, $"\n      table {parameter} entry {i} (record {index + i}): {Resolve(views, index + i)}; dwords {Dwords(views, index + i)}{Seen(views, index + i, offset + (i * DescriptorWindow.ViewRecordBytes))}");
         }
+    }
+
+    /// <summary>
+    /// What a program sees of a buffer record: the window's copy of its first four dwords when they differ from the
+    /// heap's record, and for a console base the desktop buffer and byte offset the address map reads it from
+    /// (<see cref="GameMemoryViews.Locate"/>) beside the game-memory buffer that covers the address.
+    /// </summary>
+    private static string Seen(ShaderVisibleHeap views, uint index, uint windowOffset)
+    {
+        var text = new StringBuilder();
+        uint* window = (uint*)(ShimContext.Runtime.D3D12X.Bindings.Window.Data + windowOffset);
+
+        if (ShimContext.Runtime.D3D12X.Bindings.Window.Data != null && (window[0] != views.RecordDword(index, 0) || window[1] != views.RecordDword(index, 1) || window[2] != views.RecordDword(index, 2) || window[3] != views.RecordDword(index, 3)))
+        {
+            text.Append(CultureInfo.InvariantCulture, $"; THE WINDOW HOLDS {window[0]:x8} {window[1]:x8} {window[2]:x8} {window[3]:x8}");
+        }
+
+        uint high = views.RecordDword(index, StrideDword) & HighMask;
+
+        if (high == 0 || views.RecordDword(index, RecordsDword) == 0)
+        {
+            return text.ToString();
+        }
+
+        ulong address = views.RecordDword(index, 0) | ((ulong)high << HighShift);
+        var d3d12 = ShimContext.Runtime.D3D12X;
+        var (view, field) = d3d12.MemoryViews.Entry(address);
+        string mapped = "no view";
+
+        if (d3d12.MemoryViews.Locate(address, out nint buffer, out ulong offset))
+        {
+            mapped = string.Create(CultureInfo.InvariantCulture, $"buffer 0x{buffer:x} + 0x{offset:x}");
+        }
+
+        string covered = "no game-memory buffer";
+
+        if (d3d12.GameMemory.TryFind(address, out var range))
+        {
+            covered = string.Create(CultureInfo.InvariantCulture, $"buffer 0x{range.Resource:x} + 0x{address - range.GameAddress:x} (the range at 0x{range.GameAddress:x}, 0x{range.Size:x} bytes)");
+        }
+
+        text.Append(CultureInfo.InvariantCulture, $"; the map: view {view} field 0x{field:x} -> {mapped}; covered by {covered}");
+
+        return text.ToString();
     }
 
     /// <summary>What a record resolves to: a buffer record's console range, or the noted desktop view.</summary>

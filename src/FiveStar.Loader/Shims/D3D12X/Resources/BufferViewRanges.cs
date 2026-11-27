@@ -44,6 +44,9 @@ internal static unsafe class BufferViewRanges
     private const int UavCounterOffset = 24;
     private const int RawFormat = 39;
     private const int ViewSize = 40;
+    private const int MisplacedLogged = 64;
+
+    private static long _misplaced;
 
     /// <summary>
     /// The desktop resource and desc (<paramref name="view"/>, possibly <paramref name="copy"/>) for a buffer view on
@@ -119,6 +122,38 @@ internal static unsafe class BufferViewRanges
         view = copy;
 
         return range.Resource;
+    }
+
+    /// <summary>
+    /// <c>--scan-line-views</c>: a buffer UAV as the desktop gets it (<paramref name="view"/> on <paramref name="desktop"/>)
+    /// against the game's (<paramref name="description"/> on <paramref name="wrapper"/>): when the desktop buffer is the one
+    /// over the memory the game's resource lies in, the view must start at the same console address. One that does not
+    /// is logged (the first <see cref="MisplacedLogged"/>), with whether its record holds the console base.
+    /// </summary>
+    public static void Check(nint wrapper, nint desktop, void* description, void* view, bool based)
+    {
+        var resource = ShimContext.Runtime.D3D12X.Objects.AsResource(wrapper);
+
+        if (description == null || view == null || desktop == 0 || resource == null || resource->GameAddress == 0 || ((int*)description)[1] != BufferDimension || ((int*)view)[1] != BufferDimension)
+        {
+            return;
+        }
+
+        if (!ShimContext.Runtime.D3D12X.GameMemory.TryFind(resource->GameAddress, out var range) || range.Resource != desktop)
+        {
+            return;
+        }
+
+        ulong wanted = resource->GameAddress + (*(ulong*)((byte*)description + UavFirst) * ElementBytes((byte*)description, UavStride));
+        ulong got = range.GameAddress + (*(ulong*)((byte*)view + UavFirst) * ElementBytes((byte*)view, UavStride));
+
+        if (wanted == got || Interlocked.Increment(ref _misplaced) > MisplacedLogged)
+        {
+            return;
+        }
+
+        string record = based ? "holds the console base" : "keeps the heap index";
+        ShimContext.Runtime.Log.Warn(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"[line views] a buffer UAV of the resource at 0x{resource->GameAddress:x} (first element {*(ulong*)((byte*)description + UavFirst)}, {*(uint*)((byte*)description + UavCount)} elements of {ElementBytes((byte*)description, UavStride)} bytes, format {*(int*)description}) starts at 0x{got:x} on the desktop, not at 0x{wanted:x}; its record {record}"));
     }
 
     /// <summary>

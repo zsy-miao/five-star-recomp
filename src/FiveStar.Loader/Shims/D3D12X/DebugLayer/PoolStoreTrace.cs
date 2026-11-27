@@ -68,6 +68,11 @@ internal static unsafe class PoolStoreTrace
     private static long _outsideSeen;
     private static long _malformed;
     private static int _outsideLogged;
+    private static long _storeEntries;
+    private static long _otherKinds;
+
+    /// <summary>The ring's entries <see cref="Collect"/> read so far: stores, and loop-guard and constant-load notes.</summary>
+    public static string Kinds => $"{Interlocked.Read(ref _storeEntries)} stores and {Interlocked.Read(ref _otherKinds)} loop-guard and constant-load notes read from the ring";
 
     /// <summary>Whether programs made on demand trace their stores.</summary>
     public static bool Enabled { get; set; }
@@ -79,7 +84,7 @@ internal static unsafe class PoolStoreTrace
     public static string? Filter { get; set; }
 
     /// <summary>The name a traced program is made under with <see cref="Filter"/>: its own plus this.</summary>
-    public const string Suffix = ".stores";
+    public const string Suffix = ".stores2";
 
     /// <summary>Whether every program made on demand traces its stores (<c>--trace-pool-stores</c>): they have a cache identity of their own.</summary>
     public static bool AllPrograms => Enabled && Filter is null;
@@ -88,6 +93,29 @@ internal static unsafe class PoolStoreTrace
     public static bool Traces(string name)
     {
         return Enabled && (Filter is null || name.Contains(Suffix, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// A traced program's source with its formatted stores traced too: the prelude's FmtStore has no trace hook, so
+    /// each call goes through a wrapper defined after the prelude that notes a store into the first 64 KiB of its view
+    /// (a map view over a game-memory buffer, or a kept heap index) as a view entry, then stores.
+    /// BatchCullMeshlets' visible-meshlet appends are such stores.
+    /// </summary>
+    public static string Instrument(string hlsl)
+    {
+        const string Include = "#include \"rdna_prelude.hlsli\"";
+        const string Call = "FmtStore(";
+        int at = hlsl.IndexOf(Include, StringComparison.Ordinal);
+
+        if (at < 0 || !hlsl.Contains(Call, StringComparison.Ordinal))
+        {
+            return hlsl;
+        }
+
+        string body = hlsl[(at + Include.Length)..].Replace(Call, "FsTracedFmtStore(", StringComparison.Ordinal);
+        const string Wrapper = "\nvoid FsTracedFmtStore(uint h, uint a, uint c, uint4 v, uint n) { if ((a & ~3u) < 0x10000u) trace_entry(a & ~3u, h | 0x80000000u, v.x); FmtStore(h, a, c, v, n); }\n";
+
+        return hlsl[..(at + Include.Length)] + Wrapper + body;
     }
 
     /// <summary>The extracted program a name stands for: without <see cref="Suffix"/>.</summary>
@@ -111,13 +139,26 @@ internal static unsafe class PoolStoreTrace
 
         string[] texts = Filter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-        return index.Renamed(name => texts.Any(text => name.Contains(text, StringComparison.OrdinalIgnoreCase)), Suffix);
+        return index.Renamed(name => Renames(name, texts), Suffix);
+    }
+
+    private static bool Renames(string name, string[] texts)
+    {
+        if (!texts.Any(text => name.Contains(text, StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        Programs[FiveStar.Shaders.Translation.MeshProbe.Id(name)] = name;
+
+        return true;
     }
 
     /// <summary>The define a program made on demand starts with; registers its id.</summary>
     public static string Header(string program)
     {
-        uint id = (uint)Interlocked.Increment(ref _nextId);
+        // With a filter the id is the name's hash: a traced program's DXIL is kept between boots under its name.
+        uint id = Filter is null ? (uint)Interlocked.Increment(ref _nextId) : FiveStar.Shaders.Translation.MeshProbe.Id(Source(program));
         Programs[id] = program;
 
         return $"#define FIVESTAR_STORE_TRACE {id}u\n";
@@ -248,10 +289,13 @@ internal static unsafe class PoolStoreTrace
 
             if ((entry[HighWord] & KindMask & ~ViewKind) != 0)
             {
+                Interlocked.Increment(ref _otherKinds);
+
                 continue;
             }
 
             ulong address = Address(entry);
+            Interlocked.Increment(ref _storeEntries);
 
             foreach (ulong start in starts)
             {
@@ -403,6 +447,11 @@ internal static unsafe class PoolStoreTrace
         if (start == 0)
         {
             start = LineViewScan.StartOf(entry[HighWord] & ~ViewKind);
+        }
+
+        if (start == 0)
+        {
+            start = ShimContext.Runtime.D3D12X.MemoryViews.Start(entry[HighWord] & ~ViewKind);
         }
 
         if (start == 0)
