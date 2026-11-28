@@ -22,7 +22,8 @@ namespace FiveStar.Loader.Shims.D3D12X;
 /// barrier, not the segment's start), at any memory wait and at a new segment or recording; a memory write of a known
 /// range recorded while it is open holds back only an ExecuteIndirect whose arguments may overlap it. An
 /// ExecuteIndirect opens a new batch at its own place when the table or the piece is full, or when its argument or
-/// count buffer is none of the pass's four sources. Count buffers join: the pass zeroes records past the count. The
+/// count buffer is none of the pass's four sources. An ExecuteIndirect with a count buffer is clamped alone (the program
+/// still zeroes records past a count it is given). The
 /// budget is the recording's counter of <see cref="IndirectClamp"/>, unchanged.
 /// </summary>
 internal static unsafe class IndirectBatch
@@ -59,6 +60,7 @@ internal static unsafe class IndirectBatch
     private static readonly long[] Opens = new long[Enum.GetValues<IndirectBatchOpen>().Length];
     private static long _batched;
     private static long _jobs;
+    private static long _countedAlone;
 
     /// <summary>Whether <c>--indirect-batch</c> is on.</summary>
     public static bool Enabled { get; set; }
@@ -78,7 +80,7 @@ internal static unsafe class IndirectBatch
 
             var reasons = Enum.GetValues<IndirectBatchOpen>().Select(reason => $"{reason} {Interlocked.Read(ref Opens[(int)reason])}");
 
-            return $"; [indirect batch] {Interlocked.Read(ref _batched)} ExecuteIndirects of those not gathered ({Interlocked.Read(ref _jobs)} records) clamped in {Passes} batch passes, opened by {string.Join(", ", reasons)}";
+            return $"; [indirect batch] {Interlocked.Read(ref _batched)} ExecuteIndirects of those not gathered ({Interlocked.Read(ref _jobs)} records) clamped in {Passes} batch passes, opened by {string.Join(", ", reasons)}; {Interlocked.Read(ref _countedAlone)} with a count buffer clamped alone";
         }
     }
 
@@ -97,6 +99,15 @@ internal static unsafe class IndirectBatch
 
         if (!Enabled || !Clampable(call, arguments, offset, count, countOffset))
         {
+            return false;
+        }
+
+        // A count buffer is clamped alone, right before its execution, as gathering never takes one: the GPU writes
+        // counts (culling, appends), and with the count read at the batch's pass the bodies of w400 ran empty.
+        if (count != 0)
+        {
+            Interlocked.Increment(ref _countedAlone);
+
             return false;
         }
 

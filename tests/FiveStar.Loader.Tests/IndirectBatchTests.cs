@@ -52,29 +52,24 @@ public sealed unsafe class IndirectBatchTests
             Assert.True(IndirectBatch.Try(list, call, source, 0, 0, 0, out nint first, out ulong firstSlot, out bool opened));
             Assert.True(opened);
 
-            // The second reads the third record and two more; the third has a count buffer (the last word: 1 record).
+            // The second reads the third record and two more; one with a count buffer is clamped alone (w400's bodies).
             Assert.True(IndirectBatch.Try(list, call, source, Stride * 2, 0, 0, out nint second, out ulong secondSlot, out opened));
             Assert.False(opened);
-
-            Assert.True(IndirectBatch.Try(list, call with { MaxCount = 2 }, source, Stride * 4, source, Stride * 6, out nint third, out ulong thirdSlot, out opened));
-            Assert.False(opened);
+            Assert.False(IndirectBatch.Try(list, call with { MaxCount = 2 }, source, Stride * 4, source, Stride * 6, out _, out _, out _));
 
             Assert.Equal(first, second);
-            Assert.Equal(first, third);
             IndirectBatch.End(list);
             ClampBarriers.BeforeCopy(list->Inner, first);
 
             nint readback = device.Buffer(XboxDevice.ReadbackHeap, 256, XboxDevice.CopyDest);
             Copy(list, objects.Unwrap(readback), 0, first, firstSlot, Stride * Records);
             Copy(list, objects.Unwrap(readback), Stride * Records, first, secondSlot, Stride * Records);
-            Copy(list, objects.Unwrap(readback), Stride * Records * 2, first, thirdSlot, Stride * 2);
             Assert.Equal(0, ((delegate* unmanaged<nint, int>)XboxDevice.Vtable((nint)list)[CloseSlot])((nint)list));
             device.Run((nint)list);
 
             uint* clamped = Map(readback);
             Assert.Equal([4u, 5u, 6u, 0u, 0u, 0u, 65535u, 2u, 1u], new Span<uint>(clamped, 9).ToArray());
             Assert.Equal([65535u, 2u, 1u, 7u, 8u, 9u, 1u, 1u, 1u], new Span<uint>(clamped + 9, 9).ToArray());
-            Assert.Equal([1u, 1u, 1u, 0u, 0u, 0u], new Span<uint>(clamped + 18, 6).ToArray());
         }
         finally
         {
