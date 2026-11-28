@@ -20,6 +20,10 @@ namespace FiveStar.Loader.Shims.D3D12X.DebugLayer;
 internal static unsafe class DispatchCaptures
 {
     private const char OccurrenceSeparator = '@';
+
+    /// <summary><c>text@pN[:k]</c>: the k-th dispatch (1 by default) from present N on.</summary>
+    private const char PresentMark = 'p';
+    private const char PresentOccurrenceSeparator = ':';
     private const char ListSeparator = ',';
     private const int PollMilliseconds = 200;
     private const double GiveUpSeconds = 120;
@@ -76,17 +80,28 @@ internal static unsafe class DispatchCaptures
 
         if (at < 0)
         {
-            return new CaptureSpec(text, 1);
+            return new CaptureSpec(text, 1, 0);
         }
 
-        int occurrence = int.Parse(text.AsSpan(at + 1), NumberStyles.None, CultureInfo.InvariantCulture);
+        var count = text.AsSpan(at + 1);
+        long fromPresent = 0;
+
+        if (count.Length > 0 && count[0] == PresentMark)
+        {
+            int colon = count.IndexOf(PresentOccurrenceSeparator);
+            var present = colon < 0 ? count[1..] : count[1..colon];
+            fromPresent = long.Parse(present, NumberStyles.None, CultureInfo.InvariantCulture);
+            count = colon < 0 ? "1".AsSpan() : count[(colon + 1)..];
+        }
+
+        int occurrence = int.Parse(count, NumberStyles.None, CultureInfo.InvariantCulture);
 
         if (occurrence < 1)
         {
             throw new FormatException($"--capture-dispatch {text}: occurrences count from 1");
         }
 
-        return new CaptureSpec(text[..at], occurrence);
+        return new CaptureSpec(text[..at], occurrence, fromPresent);
     }
 
     /// <summary>A compute program was given to a pipeline: its DXIL is kept when an entry names it.</summary>
@@ -215,8 +230,12 @@ internal static unsafe class DispatchCaptures
         {
             var spec = Specs[index];
 
-            if (name.Contains(spec.Text, StringComparison.OrdinalIgnoreCase) && Seen.AddOrUpdate(index, 1, static (_, count) => count + 1) == spec.Occurrence)
+            bool counted = name.Contains(spec.Text, StringComparison.OrdinalIgnoreCase) && Pipelines.StandInUse.Frame >= spec.FromPresent;
+
+            if (counted && Seen.AddOrUpdate(index, 1, static (_, count) => count + 1) == spec.Occurrence)
             {
+                ShimContext.Log?.Info($"[capture] {name}: dispatch {spec.Occurrence} from present {spec.FromPresent}, at present {Pipelines.StandInUse.Frame}");
+
                 return CapturePlanner.Plan(list, name);
             }
         }

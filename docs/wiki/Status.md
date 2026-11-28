@@ -14,7 +14,8 @@ GTA VI does not run yet. Updated 27 November 2026.
   - Lighting: sun with cascade shadows, sky, and a stand-in ambient term now reach the frame. The prologue yard
     reads as the game's sunset scene. The bars of sunlight on shadowed walls are gone: the stand-in of the held
     ray-traced sun-shadow passes wrote "lit" over the cascade shadow textures as well as its own outputs. Wrong:
-    the tiles the game hands to ray tracing now read in shadow, so sunlit ground shows dark bands; tile-shaped
+    in some runs sunlit ground in the yard shows tile-edged dark bands (from the cascade path: no ray-traced
+    classification runs in those frames); tile-shaped
     sun on hair; no ray-traced distant shadows or leak plugging; lamps with shadow slots are dark,
     skinned bodies are held, some black blocks.
   - Post-processing: the posterized rings and most of the smear are gone since a translator fix for literal
