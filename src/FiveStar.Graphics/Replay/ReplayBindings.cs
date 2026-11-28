@@ -26,7 +26,7 @@ internal sealed unsafe class ReplayBindings : IDisposable
     private readonly DispatchCapture _capture;
     private readonly List<string> _skipped = [];
 
-    public ReplayBindings(ID3D12Device device, CaptureFolder folder, DispatchCapture capture)
+    public ReplayBindings(ID3D12Device device, CaptureFolder folder, DispatchCapture capture, bool importGameMemory)
     {
         _device = device;
         _capture = capture;
@@ -40,7 +40,7 @@ internal sealed unsafe class ReplayBindings : IDisposable
 
             try
             {
-                resources[resource.Id] = new ReplayResource(device, folder, resource);
+                resources[resource.Id] = new ReplayResource(device, folder, resource, importGameMemory);
             }
             catch (SharpGen.Runtime.SharpGenException exception)
             {

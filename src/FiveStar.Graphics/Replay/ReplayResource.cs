@@ -10,18 +10,31 @@ namespace FiveStar.Graphics.Replay;
 /// <summary>
 /// One captured resource on the replay device: the resource the program reads and writes, an upload buffer with its
 /// bytes before the dispatch (copied in again before every run) and, for one with a reference output, a readback buffer.
+/// The resource is in video memory, or, for a range of game memory when game memory is imported, in system memory as
+/// in the game (<see cref="ImportedBuffer"/>).
 /// </summary>
 internal sealed unsafe class ReplayResource : IDisposable
 {
     private readonly ID3D12Resource _upload;
     private readonly ID3D12Resource? _readback;
+    private readonly ImportedBuffer? _imported;
     private readonly ResourceStates _home;
     private ResourceStates _state = ResourceStates.Common;
 
-    public ReplayResource(ID3D12Device device, CaptureFolder folder, CapturedResource captured)
+    public ReplayResource(ID3D12Device device, CaptureFolder folder, CapturedResource captured, bool importGameMemory)
     {
         Captured = captured;
-        Resource = device.CreateCommittedResource(new HeapProperties(HeapType.Default), HeapFlags.None, Description(captured), ResourceStates.Common);
+
+        if (importGameMemory && captured.IsBuffer && captured.ConsoleAddress is not null)
+        {
+            _imported = new ImportedBuffer(device, captured.Width);
+            Resource = _imported.Resource;
+        }
+        else
+        {
+            Resource = device.CreateCommittedResource(new HeapProperties(HeapType.Default), HeapFlags.None, Description(captured), ResourceStates.Common);
+        }
+
         _upload = device.CreateCommittedResource(new HeapProperties(HeapType.Upload), HeapFlags.None, ResourceDescription.Buffer(captured.Bytes), ResourceStates.GenericRead);
         Fill(folder);
         _home = Home(captured);
@@ -78,6 +91,14 @@ internal sealed unsafe class ReplayResource : IDisposable
     {
         _readback?.Dispose();
         _upload.Dispose();
+
+        if (_imported is not null)
+        {
+            _imported.Dispose();
+
+            return;
+        }
+
         Resource.Dispose();
     }
 
