@@ -514,6 +514,11 @@ internal static unsafe class CommandListBindingMethods
             }
 
             IndirectGather.AfterWork(self, dispatch, RectangleListState.Of(self)->Pipeline);
+
+            if (dispatch && RtStandIns.Enabled)
+            {
+                RtStandIns.AfterIndirectDispatch(self, RectangleListState.Of(self)->Pipeline);
+            }
         }
         catch (Exception exception)
         {

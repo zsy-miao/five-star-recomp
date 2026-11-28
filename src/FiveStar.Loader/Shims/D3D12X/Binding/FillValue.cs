@@ -8,8 +8,9 @@ namespace FiveStar.Loader.Shims.D3D12X.Binding;
 /// <paramref name="Share"/> above 0 it writes that share of the level measured on the GPU instead
 /// (<see cref="UavFill.Measure"/>), at least <paramref name="Least"/> per channel, packed as R9G9B9E5 for uint views;
 /// <paramref name="Tint"/> is how much of the level's colour it keeps (1 all of it, 0 a grey of its luminance).
+/// <paramref name="Other"/> is what a replacement writes where a uint view holds <paramref name="Packed"/> (<see cref="UavFill.Replace"/>).
 /// </summary>
-internal readonly record struct FillValue(float Red, float Green, float Blue, uint Packed, float Share = 0, float Least = 0, float Tint = 1)
+internal readonly record struct FillValue(float Red, float Green, float Blue, uint Packed, float Share = 0, float Least = 0, float Tint = 1, uint Other = 0)
 {
     private const int MantissaBits = 9;
     private const int ExponentBias = 15;

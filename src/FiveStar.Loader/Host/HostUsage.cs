@@ -275,7 +275,8 @@ internal static class HostUsage
                                  shadows) with --raytracing's paths; a node in unmapped memory misses; passes still
                                  held by --skip-pipelines keep their stand-ins, the screen-probe light is not greyed
           --no-rt-stand-ins      held ray-tracing passes leave their outputs as they are (default without --raytracing:
-                                 shadow masks fully lit, reflections black, the screen-probe light a grey)
+                                 shadow masks fully lit, lamps' uncovered shadow tiles lit, reflections black, the
+                                 screen-probe light a grey)
           --no-lighting-waits    the lighting pipelines (cascade shadows, shadow masks, tiled lighting, TL_PS, exposure,
                                  bloom, tone map) are skipped while stand-ins instead of waited for up to 60 s at first use
           --no-map-readback      a Map of a small GPU-written target (the exposure statistics) leaves the game's memory as
