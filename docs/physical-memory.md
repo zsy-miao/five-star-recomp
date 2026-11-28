@@ -246,7 +246,7 @@ there (the drain of earlier work at a barrier), not what the program costs: the 
 serialized. `--indirect-batch`, which replaces about 5 million argument clamps (each with three transitions) by
 340 thousand batch passes over a boot, took the same two scenes from 303.9 to 241.7 and from 149.7 to 119.9 ms of
 queue #1 a frame (w395 against w392), with every program's pass time unchanged. Both of w395's screen captures show
-a grid of half-tiles over the whole frame that no capture without it shows; that is not yet tied to the batch.
+a grid of half-tiles over the whole frame that no capture without it shows: rectangle-list draws drawn as triangles, fixed since (loader.md, `--indirect-batch`).
 So the next speed-up is in the barriers around indirect work, not a video-memory image; the write marks below wait
 until a frame shows reads of the GPU pool to cost something.
 

@@ -177,8 +177,9 @@ internal static class HostUsage
           --indirect-gather-strict  as --indirect-gather, but every memory write and dispatch ends gathering
                                  (default: a memory write only for arguments it overlaps, a dispatch only when it
                                  stores to buffers)
-          --indirect-batch       with --indirect-gather: records not gathered join one clamp pass per stretch between
-                                 barriers after writes (a job table filled while recording) instead of a pass each
+          --indirect-batch       sets --indirect-gather; with it, by default, records not gathered join one clamp pass per
+                                 stretch between barriers after writes (a job table filled while recording)
+          --no-indirect-batch    with --indirect-gather: a clamp pass for each ExecuteIndirect not gathered, as before
           --check-view-liveness  before each draw and dispatch, check the bound tables' views: released resources, wrong kinds
           --d3d12-nan-scan <t>   read back the inputs of draws whose pipeline contains t (comma-separated texts) and log
                                  those holding NaN or Inf
