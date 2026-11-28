@@ -207,6 +207,49 @@ What is left is the game's memory the GPU reads for the first time each frame: g
 6.1 GiB pool and constants in the GPU pool, all imported. The frame's GPU work (240 ms of queue #1 in the world) is
 led by the G-buffer and shadow mesh-shader draws, which read them through the address map.
 
+### The ceiling: twins that are never synced
+
+`--vram-twin-ceiling <presents>[,pool][,<MiB>]` (a measurement, not for play) gives buffers over game memory a
+twin in video memory that programs read (their SRVs), copied from game memory when made and every so many presents,
+otherwise never synced; stores still go to game memory. Twins stop at 5120 MiB (or the MiB given) and where the
+device's local budget would keep less than 1 GiB free: the world uses 16.1 of an RTX 4090's 22.8 GiB without them.
+`,pool` twins only the streaming pool's 1 GiB section windows; without it, the GPU pool's window and every buffer of
+1 MiB or more get one too.
+
+Same build, input and command line, RTX 4090, scenes matched by their top passes (queue #1 GPU ms per frame):
+
+| Scene | No twins (w392) | Pool twins, 5 of 6.1 GiB (w393) |
+|---|---|---|
+| spotlight cutscene, two samples | 149.7 | 161.6 |
+| yard, hair and position-only passes leading | 303.9 | 291.8 |
+
+The pool's reads cost the frame nothing measurable: each pass is within the spread between boots (w371, the same
+command line a build earlier, ran the cutscene at 165.1). The full form (w394: 5.6 GiB, the GPU pool's window, a
+174 MiB, a 15 MiB and two 1 MiB buffers) lost the device (DXGI_ERROR_DEVICE_HUNG) 30 s after its first world frame:
+programs read counts and arguments the GPU wrote as they were up to 60 presents earlier. What the GPU pool and the
+game's buffers cost to read can only be measured once GPU writes reach the twins, which is the write-mark step below.
+
+The programs that lead the frame's pass list do not pay for system memory either. Captured in w395
+(`--capture-dispatch`) and replayed alone on the same RTX 4090 with their game memory in video memory and in imported
+system memory (`fivestar shader replay --game-memory video|system`, median of 10 runs):
+
+| Program | In the frame (w392, same scene) | Replay, video memory | Replay, system memory |
+|---|---|---|---|
+| hair_resolve CS_HairTileClassify (1 dispatch, 160 x 90 groups) | 33 to 38 ms | 0.011 ms | 0.011 ms |
+| ped_skinning_cs CS_PedStandardSkinning_8 (268 dispatches) | 15 to 17 ms, 0.06 a dispatch | 0.005 ms | 0.005 ms |
+| compute_graph_ops CS_MatMulAlignedOperation (45 dispatches) | 12 to 20 ms, 0.3 a dispatch | 0.004 ms | 0.005 ms |
+| CS_ScreenProbes_GenerateShaderBins | 7.5 to 9 ms | 0.011 ms | 0.012 ms |
+| CS_ProjDecalClassify | 5 to 17 ms | 0.010 ms | 0.012 ms |
+
+A pass's time in `--gpu-timings` runs from its timestamp to the next, so it holds whatever the queue waited for
+there (the drain of earlier work at a barrier), not what the program costs: the frame is bound by how its work is
+serialized. `--indirect-batch`, which replaces about 5 million argument clamps (each with three transitions) by
+340 thousand batch passes over a boot, took the same two scenes from 303.9 to 241.7 and from 149.7 to 119.9 ms of
+queue #1 a frame (w395 against w392), with every program's pass time unchanged. Both of w395's screen captures show
+a grid of half-tiles over the whole frame that no capture without it shows; that is not yet tied to the batch.
+So the next speed-up is in the barriers around indirect work, not a video-memory image; the write marks below wait
+until a frame shows reads of the GPU pool to cost something.
+
 ### Video memory images of game memory (design notes)
 
 `--gpu-memory-vram` (branch lane-vram, parked) was not faster for two reasons its logs show:

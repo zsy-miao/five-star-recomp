@@ -554,7 +554,8 @@ internal sealed unsafe class GameMemoryViews
         bool writable = (DesktopFlags(range.Resource) & AllowUnorderedAccess) != 0;
         var map = new Span<byte>(_data, _map.Bytes);
 
-        if (writable && range.Size >= VramTwins.SmallestRange)
+        // Read-only buffers too: what the CPU wrote reads stale, as everywhere with twins.
+        if (range.Size >= VramTwins.SmallestRange)
         {
             VramTwins.Whole(_device, range.Resource, range.Size);
         }
