@@ -275,7 +275,8 @@ internal static class HostUsage
                                  shadows) with --raytracing's paths; a node in unmapped memory misses; passes still
                                  held by --skip-pipelines keep their stand-ins, the screen-probe light is not greyed
           --no-rt-stand-ins      held ray-tracing passes leave their outputs as they are (default without --raytracing:
-                                 shadow masks fully lit, reflections black, the screen-probe light a grey)
+                                 shadow masks fully lit, lamps' uncovered shadow tiles lit, reflections black, the
+                                 screen-probe light a grey)
           --rt-stand-ins-reach   a held pass's stand-in writes every texture UAV in its programs' reach (as before; that
                                  set the cascade shadow textures fully lit), not only the records they store through
           --no-lighting-waits    the lighting pipelines (cascade shadows, shadow masks, tiled lighting, TL_PS, exposure,

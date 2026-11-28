@@ -123,6 +123,70 @@ public sealed unsafe class UavFillTests
         Assert.Equal(FillValue.SharedExponent(grey, grey, grey), Read(device, context, arena, textures[1], 4)[0]);
     }
 
+    /// <summary>
+    /// The shadow-mask table's stand-in: texels still at the cleared 0xffffffff become 0xf, a tile a pass wrote (an
+    /// atlas place, 0x100) stays; and only an R32_UINT image far wider than high counts as the table.
+    /// </summary>
+    [WarpFact]
+    public void A_replacement_only_changes_the_texels_that_hold_the_value()
+    {
+        using var gpu = GpuDevice.CreateWarp(debugLayer: false);
+        var device = gpu.Device;
+        using var heap = device.CreateDescriptorHeap(new Vortice.Direct3D12.DescriptorHeapDescription(DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView, 1, DescriptorHeapFlags.ShaderVisible));
+        using var context = new CommandContext(device);
+        using var arena = new ResourceArena(device);
+
+        var description = Vortice.Direct3D12.ResourceDescription.Texture2D(Format.R32_UInt, Size, Size, 1, 1, flags: ResourceFlags.AllowUnorderedAccess);
+        using var texture = device.CreateCommittedResource(HeapType.Default, description, ResourceStates.UnorderedAccess);
+        device.CreateUnorderedAccessView(texture, null, new UnorderedAccessViewDescription { Format = Format.R32_UInt, ViewDimension = UnorderedAccessViewDimension.Texture2D }, heap.GetCPUDescriptorHandleForHeapStart());
+
+        uint* words = stackalloc uint[6];
+        (words[0], words[1], words[4]) = ((uint)Format.R32_UInt, (uint)UnorderedAccessViewDimension.Texture2D, 1);
+        var view = UavViews.Of(Resource(description), words)!.Value;
+        ulong start = heap.GetGPUDescriptorHandleForHeapStart().Ptr;
+        var steps = new Func<nint, bool>[]
+        {
+            list => UavFill.Record(device.NativePointer, list, start, 0, view, new FillValue(0, 0, 0, 0x100)),
+            list => UavFill.Replace(device.NativePointer, list, start, 0, view, match: uint.MaxValue, replacement: 0xF),
+            list => UavFill.Record(device.NativePointer, list, start, 0, view with { Width = 4 }, new FillValue(0, 0, 0, uint.MaxValue)),
+            list => UavFill.Replace(device.NativePointer, list, start, 0, view, match: uint.MaxValue, replacement: 0xF),
+        };
+
+        foreach (var step in steps)
+        {
+            context.List.SetDescriptorHeaps(1, new[] { heap });
+            Assert.True(step(context.List.NativePointer));
+            context.ExecuteAndWait();
+        }
+
+        // The left half was set back to the cleared value and replaced; the right half kept the pass's 0x100.
+        Assert.Equal([0xFu, 0xFu, 0xFu, 0xFu, 0x100u, 0x100u, 0x100u, 0x100u], Read(device, context, arena, texture, 4));
+        Assert.True(ShadowMaskTiles.IsTable(new UavView(42, UavViews.Texture2D, 7680, 90, 1)));
+        Assert.False(ShadowMaskTiles.IsTable(new UavView(42, UavViews.Texture2D, 1280, 720, 1)));
+        Assert.False(ShadowMaskTiles.IsTable(new UavView(62, UavViews.Texture2D, 7680, 90, 1)));
+    }
+
+    /// <summary>
+    /// Only packed denoisers' tables are gone over, only while a shadow-mask trace was held in the last 2 s, and "lit"
+    /// follows bit 0 of the lighting's flags (4-bit packing 0xf, else 0xff) read through a based V#.
+    /// </summary>
+    [Fact]
+    public void Shadow_mask_tiles_are_replaced_only_after_packed_denoisers_while_a_trace_is_held()
+    {
+        Assert.True(ShadowMaskTiles.IsPackedDenoiser("sgd1_0d454b52_t41_shadowmask~CS_DenoiseShadowMaskLDSPacked_113e2add_Wrapped"));
+        Assert.False(ShadowMaskTiles.IsPackedDenoiser("sgd1_0d451542_t41_shadowmask~CS_DenoiseShadowMaskLDS_113e2add_Wrapped"));
+
+        long second = System.Diagnostics.Stopwatch.Frequency;
+        Assert.False(ShadowMaskTiles.TraceHeld(0, 10 * second));
+        Assert.True(ShadowMaskTiles.TraceHeld(10 * second, 11 * second));
+        Assert.False(ShadowMaskTiles.TraceHeld(10 * second, 13 * second));
+
+        Assert.Equal(0xFu, ShadowMaskTiles.LitFor(0x21));
+        Assert.Equal(0xFFu, ShadowMaskTiles.LitFor(0x20));
+        Assert.Equal(0x2_8000_1000ul, ShadowMaskTiles.RecordBase(0x8000_1000, (16u << 16) | 0x2));
+        Assert.Equal(0ul, ShadowMaskTiles.RecordBase(1234, 16u << 16));
+    }
+
     [Fact]
     public void The_screen_probe_grey_packs_as_r9g9b9e5()
     {

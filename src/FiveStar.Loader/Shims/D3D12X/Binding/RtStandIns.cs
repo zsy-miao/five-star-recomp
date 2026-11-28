@@ -101,7 +101,7 @@ internal static unsafe class RtStandIns
                 return "ray-tracing stand-ins: none filled";
             }
 
-            return "ray-tracing stand-ins (approximate): " + string.Join(", ", used.Select(rule => $"{Rules[rule].Name} {Interlocked.Read(ref FilledByRule[rule])} UAVs")) + $", {Interlocked.Read(ref _shadowCopies)} of them copied into their R9G9B9E5 shadows, {AmbientLight.Summary}; {SharedExponentAliases.Summary}";
+            return "ray-tracing stand-ins (approximate): " + string.Join(", ", used.Select(rule => $"{Rules[rule].Name} {Interlocked.Read(ref FilledByRule[rule])} UAVs")) + $", {Interlocked.Read(ref _shadowCopies)} of them copied into their R9G9B9E5 shadows, {AmbientLight.Summary}, {ShadowMaskTiles.Summary};{SharedExponentAliases.Summary}";
         }
     }
 
@@ -123,6 +123,7 @@ internal static unsafe class RtStandIns
     public static void Named(nint pipeline, string names)
     {
         AmbientLight.Named(pipeline, names);
+        ShadowMaskTiles.Named(pipeline, names);
         int rule = RuleOf(names);
 
         if (Enabled && ScreenProbeLight && rule >= 0 && Rules[rule].AfterRun)
@@ -138,6 +139,7 @@ internal static unsafe class RtStandIns
     /// <summary>A dispatch of a held pipeline named <paramref name="name"/> was skipped: its outputs get the rule's value.</summary>
     public static void AtSkip(XboxObject* list, string name)
     {
+        ShadowMaskTiles.Skipped(name);
         int rule = RuleOf(name);
 
         if (rule >= 0)
@@ -156,6 +158,17 @@ internal static unsafe class RtStandIns
         }
 
         AmbientLight.AfterDispatch(list, pipeline);
+        ShadowMaskTiles.AfterDispatch(list, pipeline);
+    }
+
+    /// <summary>
+    /// After an indirect dispatch that ran: the shadow-mask denoisers are ExecuteIndirects (w119's watch), so their
+    /// tables of tiles are gone over here (<see cref="ShadowMaskTiles"/>); the other rules act at plain dispatches.
+    /// </summary>
+    [HotPath]
+    public static void AfterIndirectDispatch(XboxObject* list, nint pipeline)
+    {
+        ShadowMaskTiles.AfterDispatch(list, pipeline);
     }
 
     /// <summary>
