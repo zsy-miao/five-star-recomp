@@ -28,7 +28,8 @@ GTA VI does not run yet. Updated 27 November 2026.
   RTX 5090 report (#64) loses the device earlier in another way.
 - **Speed:** a world frame takes about 170-260 ms (260 with character bodies drawn). The GPU waits at barriers more than
   it computes: replayed alone the heaviest passes take microseconds. Batching the indirect-argument clamps saved
-  about 20% in a test but still breaks the picture. Game memory in video memory gains little (measured).
+  about 25% of GPU time per frame in a matched scene and is on by default (`--no-indirect-batch` turns it off).
+  Game memory in video memory gains little (measured).
 - **Frozen PROLOGUE card: fixed (27 November).** A translator bug made one cascade-shadow compute program write its
   lists over the start of a graphics heap, which holds the quad the final composite draws. With the fix the game
   shows the prologue yard as live 3D past the card, still wrongly lit.
