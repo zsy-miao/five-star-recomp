@@ -80,7 +80,7 @@ internal static unsafe class DesktopCalls
 
     public static void ShaderResourceView(nint device, nint resource, BufferViewDescription* view, nint handle)
     {
-        ((delegate* unmanaged<nint, nint, BufferViewDescription*, nint, void>)ComObject.Slot(device, CreateShaderResourceViewSlot))(device, resource, view, handle);
+        ((delegate* unmanaged<nint, nint, BufferViewDescription*, nint, void>)ComObject.Slot(device, CreateShaderResourceViewSlot))(device, VramTwins.Substitute(resource), view, handle);
     }
 
     public static void UnorderedAccessView(nint device, nint resource, BufferViewDescription* view, nint handle)

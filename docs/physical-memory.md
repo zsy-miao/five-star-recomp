@@ -185,6 +185,118 @@ but can give the GPU the same memory:
 - Limits: heaps opened from a file mapping are system-memory (CPU-visible) heaps read over PCIe; textures in them
   are restricted to row-major layouts, so tiled console textures need a copy into a default heap.
 
+### What the GPU pays for system memory
+
+One compute dispatch of 67 million 4-byte accesses to a 256 MiB buffer on an RTX 4090 (driver 32.0.16.2124), GPU ms
+by timestamp queries, nothing else on the GPU (a scratch program, not in the repository):
+
+| Buffer in | load, in order | load, random | load, random in 1 MiB | store, random | atomic add, random |
+|---|---|---|---|---|---|
+| imported VirtualAlloc memory or section view (the heaps above) | 22 | 224 | 131 | 242 to 274 | 283 to 321 |
+| driver heap in system memory (CUSTOM, L0) | 17 | 222 | 1.1 | 241 | 274 |
+| video memory, DEFAULT or GPU_UPLOAD (through the BAR) | 0.3 | 8 | 0.8 | 9 | 18 |
+
+Video memory is 25 to 280 times faster at first reads, stores and atomics. Memory the driver owns is cached by the
+GPU once read, imported memory is not; so the loader's own tables (the descriptor window, the address map, the
+user-data ring: driver heaps) gain little from video memory: `--gpu-upload-heaps` gave 204 against 212 ms of GPU
+work a frame in the same cutscene (w324, w323; samples vary by 3 %). The CPU writes a GPU_UPLOAD mapping at
+21 GB/s and reads it at 14 MB/s. lane-drvheap holds the full table and a prototype that allocates the game's
+graphics heaps as driver heaps (not booting yet).
+
+What is left is the game's memory the GPU reads for the first time each frame: geometry and streamed data in the
+6.1 GiB pool and constants in the GPU pool, all imported. The frame's GPU work (240 ms of queue #1 in the world) is
+led by the G-buffer and shadow mesh-shader draws, which read them through the address map.
+
+### The ceiling: twins that are never synced
+
+`--vram-twin-ceiling <presents>[,pool][,<MiB>]` (a measurement, not for play) gives buffers over game memory a
+twin in video memory that programs read (their SRVs), copied from game memory when made and every so many presents,
+otherwise never synced; stores still go to game memory. Twins stop at 5120 MiB (or the MiB given) and where the
+device's local budget would keep less than 1 GiB free: the world uses 16.1 of an RTX 4090's 22.8 GiB without them.
+`,pool` twins only the streaming pool's 1 GiB section windows; without it, the GPU pool's window and every buffer of
+1 MiB or more get one too.
+
+Same build, input and command line, RTX 4090, scenes matched by their top passes (queue #1 GPU ms per frame):
+
+| Scene | No twins (w392) | Pool twins, 5 of 6.1 GiB (w393) |
+|---|---|---|
+| spotlight cutscene, two samples | 149.7 | 161.6 |
+| yard, hair and position-only passes leading | 303.9 | 291.8 |
+
+The pool's reads cost the frame nothing measurable: each pass is within the spread between boots (w371, the same
+command line a build earlier, ran the cutscene at 165.1). The full form (w394: 5.6 GiB, the GPU pool's window, a
+174 MiB, a 15 MiB and two 1 MiB buffers) lost the device (DXGI_ERROR_DEVICE_HUNG) 30 s after its first world frame:
+programs read counts and arguments the GPU wrote as they were up to 60 presents earlier. What the GPU pool and the
+game's buffers cost to read can only be measured once GPU writes reach the twins, which is the write-mark step below.
+
+The programs that lead the frame's pass list do not pay for system memory either. Captured in w395
+(`--capture-dispatch`) and replayed alone on the same RTX 4090 with their game memory in video memory and in imported
+system memory (`fivestar shader replay --game-memory video|system`, median of 10 runs):
+
+| Program | In the frame (w392, same scene) | Replay, video memory | Replay, system memory |
+|---|---|---|---|
+| hair_resolve CS_HairTileClassify (1 dispatch, 160 x 90 groups) | 33 to 38 ms | 0.011 ms | 0.011 ms |
+| ped_skinning_cs CS_PedStandardSkinning_8 (268 dispatches) | 15 to 17 ms, 0.06 a dispatch | 0.005 ms | 0.005 ms |
+| compute_graph_ops CS_MatMulAlignedOperation (45 dispatches) | 12 to 20 ms, 0.3 a dispatch | 0.004 ms | 0.005 ms |
+| CS_ScreenProbes_GenerateShaderBins | 7.5 to 9 ms | 0.011 ms | 0.012 ms |
+| CS_ProjDecalClassify | 5 to 17 ms | 0.010 ms | 0.012 ms |
+
+A pass's time in `--gpu-timings` runs from its timestamp to the next, so it holds whatever the queue waited for
+there (the drain of earlier work at a barrier), not what the program costs: the frame is bound by how its work is
+serialized. `--indirect-batch`, which replaces about 5 million argument clamps (each with three transitions) by
+340 thousand batch passes over a boot, took the same two scenes from 303.9 to 241.7 and from 149.7 to 119.9 ms of
+queue #1 a frame (w395 against w392), with every program's pass time unchanged. Both of w395's screen captures show
+a grid of half-tiles over the whole frame that no capture without it shows; that is not yet tied to the batch.
+So the next speed-up is in the barriers around indirect work, not a video-memory image; the write marks below wait
+until a frame shows reads of the GPU pool to cost something.
+
+### Video memory images of game memory (design notes)
+
+`--gpu-memory-vram` (branch lane-vram, parked) was not faster for two reasons its logs show:
+
+- It images little of what is read. It moves slot-133 buffers of 1 MiB or more on XMem pages: 21 to 32 buffers,
+  162 to 379 MiB (w154 to w166). The 480 to 540 buffers in the game's graphics heap (457 to 592 MiB), the pool
+  the address map reads for mesh shaders and every address a program computes stay in system memory.
+- Where the game says the GPU may write (PAGE_GRAPHICS_READWRITE, nearly all of it), nothing tells which pages
+  the GPU did write, so any CPU access to such a page brings 512 KiB down after waiting for every queue: 36,835 MiB
+  read back and 113,775 ms waited in w166. An earlier form compared instead (w154: 271,640 ms syncing).
+
+VIctory (PR #3102, GPL-3.0; facts from its code and docs) images title buffers in GPU upload heaps:
+
+- **CPU writes:** pages are made read-only (64 KiB units) and a vectored handler marks them; write watch only
+  tells which pools are tracked. Writes by the kernel and the runtime (file reads, DirectStorage) are reported by
+  hand. A page mapped at several addresses is guarded at each, and a write at one marks every copy. A submission
+  refreshes the ranges it binds, and for programs with computed addresses every copy its page table names.
+- **GPU writes:** translated programs set a bit per 64 KiB page at every store through a view (write marks); after
+  the submission only marked pages come back from video memory (one GPU copy into a system-memory mirror, 0.05 ms
+  plus the bytes) and are compared with title memory. Ranges written without marks are snapshot before and
+  compared after, which costs more than it saves when large.
+- **Measured** (RTX 5070 Ti, synthetic submissions; no figure from a real frame is published): GPU time 44 to
+  16 ms with read-only copies in video memory and to 11 ms with written ones too, of which 9 ms is marking,
+  because the mark bitmap sits in system memory.
+
+XCL's shadow of its coherent window (XCL_UMA_SHADOW, for GPUs without OpenExistingHeapFromAddress) uploads the CPU's
+writes found by write watch before each submission and reads GPU writes back only at Map and after the lists'
+memory writes: it does not find program stores either.
+
+For this loader:
+
+- Write watch does not apply: the pool and the GPU pool are views of sections (MEM_WRITE_WATCH is for VirtualAlloc
+  memory). Page guards do (`VramPages` on lane-vram), at every address a frame is mapped at, with DirectStorage's
+  writes through the store reported (`ObserveWrites`).
+- The game's flags prove little: of the GPU pool only the first 38 MiB are GPU read-only (0x1004, 0x1404,
+  0x8404); constants are in its 47 MiB write-combined read-write piece (0x2404), buffer-view data in the 27 MiB
+  write-combined read-only one (0x8404), and the streaming pool is all read-write.
+- So the step that makes an image pay is the same as VIctory's: **write marks from the translator** (a bit per
+  64 KiB page at every store through the address map's UAVs, in a video-memory bitmap read back with the fence).
+  With them the image of the section windows can be the GPU's only copy (SRV and UAV of each page), pages come
+  down only where marked, and CPU reads of unmarked pages need no fault. It is a FiveStar.Shaders change and
+  belongs in a translator batch.
+- Without the translator, two pieces are safe: the write-combined pieces of the GPU pool as GPU upload memory
+  mapped at the game's address (no sync at all: the game declared it does not read them; needs XMem to back a
+  reservation with a mapping that is not a section, and the address steering of lane-drvheap, not tried on a BAR
+  mapping), and images of the pages the flags make GPU read-only.
+
 The game calls the device right after mapping (vtable +0x250 with the address and page count at 0x141E6C2BB,
 +0x428 after the five pieces at 0x141E8684C); these are the hooks for registering the memory with the GPU.
 

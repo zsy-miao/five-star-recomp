@@ -63,7 +63,7 @@ internal sealed unsafe class AddressBufferViews
         }
 
         var create = (delegate* unmanaged<nint, nint, BufferViewDescription*, nint, void>)ComObject.Slot(device, DesktopShaderResourceViewSlot);
-        nint target = range.Resource;
+        nint target = Binding.VramTwins.Substitute(range.Resource);
         BufferViewDescription raw;
         var written = (BufferViewDescription*)Binding.RawBufferViews.View(&desktop, (byte*)&raw, false, record, ref target);
         create(device, target, written, handle);
@@ -148,7 +148,7 @@ internal sealed unsafe class AddressBufferViews
         var desktop = BufferViewDescription.RawShaderResource((uint)(bytes / RawElementBytes));
         desktop.SrvFirstElement = offset / RawElementBytes;
         var create = (delegate* unmanaged<nint, nint, BufferViewDescription*, nint, void>)ComObject.Slot(device, DesktopShaderResourceViewSlot);
-        create(device, range.Resource, &desktop, handle);
+        create(device, Binding.VramTwins.Substitute(range.Resource), &desktop, handle);
 
         return true;
     }

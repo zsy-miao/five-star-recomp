@@ -948,7 +948,7 @@ file per distinct output signature ([d3d12x-shim.md](d3d12x-shim.md#rectangle-li
 ```
 fivestar shader replay <capture> [--adapter hardware|warp|<index>] [--hlsl <file> | --translator current] [--runs N]
                        [--tolerance F] [--shown N] [--backend hlsl|dxil|dxil-only] [--dxc <path>] [--debug-layer]
-                       [--group-wave] [--save-outputs <dir>] [--expected <dir>]
+                       [--group-wave] [--save-outputs <dir>] [--expected <dir>] [--game-memory video|system]
 ```
 
 Runs a compute dispatch the loader captured (`--capture-dispatch`, [loader.md](loader.md)) on a fresh device: the
@@ -961,6 +961,9 @@ float32; the count of differing dwords and the first `--shown` offsets). Exit co
 `--save-outputs` writes the first run's outputs as `<resource>.bin`, and `--expected` compares with such a folder
 instead of the capture, so two translator builds can be checked against each other. `--group-wave` runs the
 translator's wave32 variant of a wave64-pinned program, as the loader does on GPUs without 64-lane waves.
+Resources are in video memory; `--game-memory system` puts each captured range of game memory in memory of the
+process the device imports (VirtualAlloc, OpenExistingHeapFromAddress), as the loader gives game memory to the GPU,
+so the two times tell what the program pays for where game memory lives ([physical-memory.md](physical-memory.md#what-the-gpu-pays-for-system-memory)).
 
 | Capture file | Holds |
 |---|---|
