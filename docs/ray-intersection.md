@@ -103,7 +103,9 @@ In the prologue yard the classification runs its cascade-only form (draw trace o
 variants (Cascades and Misc, each plain, CB, Alpha, PPPC; Misc also Hair), each an ExecuteIndirect over one list.
 `CS_ShadowUnifiedClearRT`, `CS_WriteRTClassificationResults` and the tiled traces do not run there, so the tile-edged
 dark bands some runs show on the sunlit ground (w372, w377 at present 3400; not w370, w376, w378) come from the cascade
-path, not from tiles handed to ray tracing. Not known yet: whether those tiles are in no list (the clear's 0) or a
+path, not from tiles handed to ray tracing. Reading the R8 screen shadow back after each pass (w386, with the skinned
+casters back) shows only `CS_ShadowRenderTiledCascades`, `..CascadesCB` and `..CascadesAlpha` adding lit pixels there;
+the Misc, Hair and PPPC passes add none. Not known yet: whether those tiles are in no list (the clear's 0) or a
 variant writes them dark. Two `--shader-overrides` tests of `CS_ShadowTileClassify` changed no band: clearing bits 1
 and 6 of its tile words (w373), and making every tile word valid so every tile joins a cascade list (w378, whose yard
 showed no sun in any tile, as w376 without it).
