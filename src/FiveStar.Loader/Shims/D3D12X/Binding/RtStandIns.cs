@@ -11,8 +11,8 @@ namespace FiveStar.Loader.Shims.D3D12X.Binding;
 
 /// <summary>
 /// Stand-in outputs for the ray-tracing passes held without <c>--raytracing</c> (default on; <c>--no-rt-stand-ins</c>
-/// turns them off): when such a pass's dispatch is skipped, the texture UAVs its programs reach in their compute
-/// tables (<see cref="TableReaches.OfNames"/>; the root signature's UAV ranges without --shader-dir) get a constant
+/// turns them off): when such a pass's dispatch is skipped, the texture UAVs its programs store through
+/// (<see cref="TableReaches.StoredOfNames"/>; the root signature's UAV ranges without --shader-dir) get a constant
 /// instead of what a frame ago or nothing left there (<see cref="UavFill"/>). Ray-traced shadow masks read fully lit,
 /// planar reflections black; the screen-probe light, whose rays are held, is overwritten after
 /// CS_ScreenProbes_TemporalResolve runs (or at its skip) with a modest grey, as VIctory's ambient stand-in does
@@ -56,6 +56,11 @@ internal static unsafe class RtStandIns
 
     /// <summary>Whether a rule's fill that wrote nothing was logged (once each).</summary>
     private static readonly int[] EmptyLogged = new int[Rules.Length];
+
+    /// <summary>The left-alone UAVs last logged for each held pass, and how many such lines the log may hold (<see cref="NoteLeft"/>).</summary>
+    private static readonly ConcurrentDictionary<string, string> LeftNoted = new(StringComparer.Ordinal);
+    private const int MaxLeftLogs = 48;
+    private static int _leftLogs;
     private static long _filled;
 
     /// <summary>Filled sources copied into their R9G9B9E5 shadows so far.</summary>
@@ -72,6 +77,14 @@ internal static unsafe class RtStandIns
     /// <c>--rt-traversal</c>, whose probes trace their own light). The rules applied at a held pass's skip stay.
     /// </summary>
     public static bool ScreenProbeLight { get; set; } = true;
+
+    /// <summary>
+    /// <c>--rt-stand-ins-reach</c>: a held pass's fill writes every texture UAV in its programs' reach, as it did before
+    /// it took only the records they store through. That reach holds other passes' textures: the tiled sun-shadow
+    /// traces read the global table past the cascade shadow textures, which the fill then set fully lit after the
+    /// cascade passes had written them (bars of sunlight on shadowed walls, w357).
+    /// </summary>
+    public static bool WholeReach { get; set; }
 
     /// <summary>UAVs filled so far.</summary>
     public static long Filled => Interlocked.Read(ref _filled);
@@ -180,8 +193,7 @@ internal static unsafe class RtStandIns
         }
 
         nint inner = list->Inner;
-        var reach = TableReaches.OfNames(name);
-        int filled = reach.Length != 0 ? FillReach(inner, bindings, window, reach, rule, ref misses) : FillRanges(inner, bindings, window, rule, ref misses);
+        int filled = FillTables(inner, bindings, window, rule, name, ref misses);
 
         if (filled == 0)
         {
@@ -200,6 +212,115 @@ internal static unsafe class RtStandIns
         }
 
         CommandListBindingMethods.RestoreCompute(list);
+    }
+
+    /// <summary>
+    /// A held pass's fill takes the records its programs store textures through (<see cref="TableReaches.StoredOfNames"/>):
+    /// its own outputs. With <see cref="WholeReach"/>, and for the rule that writes after a pass that ran, every record
+    /// the programs read (<see cref="FillReach"/>); without the programs, the root signature's UAV ranges.
+    /// </summary>
+    private static int FillTables(nint inner, CommandListBindings* bindings, DescriptorWindow window, int rule, string name, ref FillMisses misses)
+    {
+        var reach = TableReaches.OfNames(name);
+
+        if (reach.Length == 0)
+        {
+            return FillRanges(inner, bindings, window, rule, ref misses);
+        }
+
+        if (WholeReach || Rules[rule].AfterRun)
+        {
+            return FillReach(inner, bindings, window, reach, rule, ref misses);
+        }
+
+        var stored = TableReaches.StoredOfNames(name);
+        NoteLeft(bindings, window, reach, stored, name);
+
+        return FillStored(inner, bindings, window, stored, rule, ref misses);
+    }
+
+    /// <summary>The records the pass's programs store through, each alone.</summary>
+    private static int FillStored(nint inner, CommandListBindings* bindings, DescriptorWindow window, (int Sgpr, uint Record)[] stored, int rule, ref FillMisses misses)
+    {
+        int filled = 0;
+
+        foreach (var (sgpr, record) in stored)
+        {
+            if (sgpr >= CommandListBindings.UserDataDwords || record >= DescriptorWindow.MaxTableRecords)
+            {
+                continue;
+            }
+
+            uint pointer = bindings->Compute[sgpr];
+            ShimContext.Runtime.D3D12X.DescriptorHeaps.MirrorTable(pointer, record + 1);
+            filled += FillRecords(inner, window, pointer, record, record + 1, rule, filled == 0, ref misses);
+        }
+
+        return filled;
+    }
+
+    /// <summary>
+    /// Logs the texture UAVs in a pass's reach that its fill leaves alone, which a whole-reach fill wrote: other passes'
+    /// textures (the cascade shadows, records 62 and 63 of the table in s4). Logged when the set changes (the tables
+    /// fill as the world loads), <see cref="MaxLeftLogs"/> times in all.
+    /// </summary>
+    private static void NoteLeft(CommandListBindings* bindings, DescriptorWindow window, TableReachEntry[] reach, (int Sgpr, uint Record)[] stored, string name)
+    {
+        if (Volatile.Read(ref _leftLogs) >= MaxLeftLogs)
+        {
+            return;
+        }
+
+        var left = new List<string>();
+
+        foreach (var entry in reach)
+        {
+            if (entry.Sgpr >= CommandListBindings.UserDataDwords || entry.Records >= DescriptorWindow.MaxTableRecords)
+            {
+                continue;
+            }
+
+            uint pointer = bindings->Compute[entry.Sgpr];
+            ShimContext.Runtime.D3D12X.DescriptorHeaps.MirrorTable(pointer, entry.Records);
+
+            for (uint record = 0; record < entry.Records; record++)
+            {
+                if (!stored.Contains((entry.Sgpr, record)) && TryView(window, pointer, record, out var view) && Takes(view, colourOnly: false))
+                {
+                    left.Add($"s{entry.Sgpr}:{record} {view.Width}x{view.Height} format {view.Format}");
+                }
+            }
+        }
+
+        string text = string.Join(", ", left);
+
+        if (LeftNoted.TryGetValue(name, out var last) && last == text)
+        {
+            return;
+        }
+
+        LeftNoted[name] = text;
+        Interlocked.Increment(ref _leftLogs);
+        string outputs = string.Join(", ", stored.Select(record => $"s{record.Sgpr}:{record.Record}"));
+        ShimContext.Log?.Info($"[d3d12_xs] ray-tracing stand-in of {name} fills the records it stores through ({outputs}) and leaves {left.Count} texture UAVs in its reach alone (--rt-stand-ins-reach fills them too): {text}");
+    }
+
+    /// <summary>The texture UAV record <paramref name="record"/> of the table at window offset <paramref name="pointer"/> names; false for none.</summary>
+    private static bool TryView(DescriptorWindow window, uint pointer, uint record, out UavView view)
+    {
+        ulong offset = pointer + ((ulong)record * DescriptorWindow.ViewRecordBytes);
+        view = default;
+
+        if (offset + DescriptorWindow.ViewRecordBytes > DescriptorWindow.NullTableBase)
+        {
+            return false;
+        }
+
+        nint device = ShimContext.Runtime.D3D12X.Objects.DesktopDevice;
+        uint increment = ((delegate* unmanaged<nint, int, uint>)ComObject.Slot(device, IncrementSlot))(device, ViewHeapType);
+        uint index = ((uint*)(window.Data + offset))[DescriptorWindow.MirroredDesktopDword];
+
+        return UavViews.TryFind(DesktopCalls.HeapCpuStart(window.ViewHeap) + (nint)((ulong)index * increment), out view);
     }
 
     /// <summary>

@@ -547,6 +547,12 @@ internal sealed record HostOptions
     /// <summary><c>--no-rt-stand-ins</c>: held ray-tracing passes leave their outputs as they are (RtStandIns).</summary>
     public bool NoRtStandIns { get; set; }
 
+    /// <summary>
+    /// <c>--rt-stand-ins-reach</c>: a held ray-tracing pass's fill writes every texture UAV in its programs' reach, not
+    /// only the records they store through (RtStandIns.WholeReach).
+    /// </summary>
+    public bool RtStandInsReach { get; set; }
+
     /// <summary><c>--no-lighting-waits</c>: the lighting pipelines are skipped while stand-ins, as any other (EssentialPipelines).</summary>
     public bool NoLightingWaits { get; set; }
 

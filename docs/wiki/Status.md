@@ -12,8 +12,11 @@ GTA VI does not run yet. Updated 27 November 2026.
     neighbours. Characters and clothing draw when the skinned passes are not skipped. Open: hair, vehicle bodies,
     some odd colours.
   - Lighting: sun with cascade shadows, sky, and a stand-in ambient term now reach the frame. The prologue yard
-    reads as the game's sunset scene. Wrong: bars of sunlight on tiles the game hands to ray tracing (our
-    stand-in says "lit"), lamps with shadow slots are dark, skinned bodies are held, some black blocks.
+    reads as the game's sunset scene. The bars of sunlight on shadowed walls are gone: the stand-in of the held
+    ray-traced sun-shadow passes wrote "lit" over the cascade shadow textures as well as its own outputs. Wrong:
+    the tiles the game hands to ray tracing now read in shadow, so sunlit ground shows dark bands; tile-shaped
+    sun on hair; no ray-traced distant shadows or leak plugging; lamps with shadow slots are dark,
+    skinned bodies are held, some black blocks.
   - Post-processing: the posterized rings and most of the smear are gone since a translator fix for literal
     samplers (about 39,000 sample sites read an arbitrary sampler from the heap). Velocity infinities are open.
   - Exposure: not re-checked since lighting shades.
@@ -39,7 +42,7 @@ GTA VI does not run yet. Updated 27 November 2026.
 | Driver shader table has about 160 MiB of headroom | smaller translated shaders |
 | Hair and vehicle bodies missing from surface colour | bring back the remaining skipped skinned passes one by one |
 | GPU writes to game memory in system RAM are slow | video-memory copies; a finer address map |
-| Bars of sunlight where there should be shadow | tiles classified for ray-traced sun shadows take our "lit" stand-in; make them use the cascade shadows |
+| Dark bands on sunlit ground | tiles the game hands to ray-traced sun shadows read "in shadow"; make them use the cascade shadows |
 | Lamps with shadow slots are dark; ambient is a constant | fill the packed shadow masks; scale the ambient stand-in to the scene |
 | Ray tracing | not built; those passes are held and stand-ins fill some outputs |
 ![Progress](progress.svg)
