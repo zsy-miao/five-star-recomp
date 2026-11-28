@@ -25,7 +25,9 @@ GTA VI does not run yet. Updated 27 November 2026.
   driver's background recompiles; the loader now turns those off (`--driver-background-work` turns them on), and
   the table stays at about 350 MiB. Open: the mode may need Windows developer mode; new areas add shaders; an
   RTX 5090 report (#64) loses the device earlier in another way.
-- **Speed:** a world frame takes about 200-400 ms. Targets: 30 fps, then 60.
+- **Speed:** a world frame takes about 170-260 ms (260 with character bodies drawn). The GPU waits at barriers more than
+  it computes: replayed alone the heaviest passes take microseconds. Batching the indirect-argument clamps saved
+  about 20% in a test but still breaks the picture. Game memory in video memory gains little (measured).
 - **Frozen PROLOGUE card: fixed (27 November).** A translator bug made one cascade-shadow compute program write its
   lists over the start of a graphics heap, which holds the quad the final composite draws. With the fix the game
   shows the prologue yard as live 3D past the card, still wrongly lit.
@@ -40,10 +42,10 @@ GTA VI does not run yet. Updated 27 November 2026.
 | Lighting pass shades almost no pixels | find why its depth-equal test fails; then directional light and ambient inputs |
 | Velocity target holds infinities | a divide by a zero previous-frame w; not traced yet |
 | Driver shader table has about 160 MiB of headroom | smaller translated shaders |
-| Hair and vehicle bodies missing from surface colour | bring back the remaining skipped skinned passes one by one |
+| Character depth pass (LinearDepthSkin) too slow to run | held; it costs ~800 ms GPU a frame when let through |
 | GPU writes to game memory in system RAM are slow | video-memory copies; a finer address map |
 | Dark bands on sunlit ground | tiles the game hands to ray-traced sun shadows read "in shadow"; make them use the cascade shadows |
-| Lamps with shadow slots are dark; ambient is a constant | fill the packed shadow masks; scale the ambient stand-in to the scene |
+| Grey-white translucent blocks over parts of the frame | not traced yet |
 | Ray tracing | not built; those passes are held and stand-ins fill some outputs |
 ![Progress](progress.svg)
 
