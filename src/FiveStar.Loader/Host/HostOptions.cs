@@ -317,8 +317,11 @@ internal sealed record HostOptions
     /// </summary>
     public bool IndirectGatherStrict { get; set; } = true;
 
-    /// <summary>With <c>--indirect-batch</c> (and gathering), indirect records not gathered are clamped in one pass per stretch between barriers after writes.</summary>
-    public bool IndirectBatch { get; set; }
+    /// <summary>
+    /// With gathering (<c>--indirect-gather</c>), indirect records not gathered are clamped in one pass per stretch between
+    /// barriers after writes; on by default, <c>--no-indirect-batch</c> clamps each alone.
+    /// </summary>
+    public bool IndirectBatch { get; set; } = true;
 
     /// <summary>Depth textures in a typed depth format made in its typeless family, so shader views read them (<c>--typeless-depth</c>).</summary>
     public bool TypelessDepth { get; set; }
