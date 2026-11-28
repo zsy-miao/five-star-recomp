@@ -96,10 +96,19 @@ records 62 and 63 of s4 for each trace and the depth copy). The traces' own outp
 view, which no fill writes. `--rt-stand-ins-reach` fills the whole reach as before. The rule that writes after a pass
 that ran (the screen-probe light) still takes the whole reach, by format.
 
-The tiles of the ray-traced side keep the clear's 0, so they read in shadow whatever the sun does there: in the
-prologue yard (w372) the sunlit ground shows dark 16-pixel bands between the cascade-written tiles. Making those tiles
-take the cascades (or the classification send every tile to the cascade lists) is open; clearing bits 1 and 6 of
-the tile words `CS_ShadowTileClassify` writes (a `--shader-overrides` test, w373) did not.
+In the prologue yard the classification runs its cascade-only form (draw trace of w377 after presents 3000, 3300 and
+3400): `CS_ShadowUnifiedClearRaster` over all 80x45 tiles (0 to record 63), `CS_ShadowTileClassify`,
+`CS_ShadowTileBalanceRTCost`, `CS_CalcRasterClassificationListCounts`, `CS_CopyShadowTileCounts`,
+`CS_WriteRasterClassificationResults` and `CS_SetDirectionalVisibleBuffer`, then the 20 `CS_ShadowRenderTiled*`
+variants (Cascades and Misc, each plain, CB, Alpha, PPPC; Misc also Hair), each an ExecuteIndirect over one list.
+`CS_ShadowUnifiedClearRT`, `CS_WriteRTClassificationResults` and the tiled traces do not run there, so the tile-edged
+dark bands some runs show on the sunlit ground (w372, w377 at present 3400; not w370, w376, w378) come from the cascade
+path, not from tiles handed to ray tracing. Reading the R8 screen shadow back after each pass (w386, with the skinned
+casters back) shows only `CS_ShadowRenderTiledCascades`, `..CascadesCB` and `..CascadesAlpha` adding lit pixels there;
+the Misc, Hair and PPPC passes add none. Not known yet: whether those tiles are in no list (the clear's 0) or a
+variant writes them dark. Two `--shader-overrides` tests of `CS_ShadowTileClassify` changed no band: clearing bits 1
+and 6 of its tile words (w373), and making every tile word valid so every tile joins a cascade list (w378, whose yard
+showed no sun in any tile, as w376 without it).
 
 | Held pass | Reach (records of s4, s5) | Stored through |
 |---|---|---|

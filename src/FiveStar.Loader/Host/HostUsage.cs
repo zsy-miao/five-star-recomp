@@ -185,8 +185,9 @@ internal static class HostUsage
           --d3d12-nan-scan-dwords <offset>:<n>  also show n floats of every scanned buffer and CBV from that byte offset
           --trace-exposure <n>   every n presents log the values the game reads from the exposure targets it maps
           --trace-views <t>      log what each table record of draws whose pipeline contains t resolves to (CPU only)
-          --capture-dispatch <t>[@n],...  capture the n-th dispatch (1st by default) of a compute pipeline whose name
-                                 contains t, with what it reads and writes, for fivestar shader replay
+          --capture-dispatch <t>[@n|@pN[:n]],...  capture the n-th dispatch (1st by default; @pN: counted from present N)
+                                 of a compute pipeline whose name contains t, with what it reads and writes,
+                                 for fivestar shader replay
           --capture-dispatch-dir <dir>  where the captures go (default: captures)
           --retire-unmapped-textures  release textures over memory the game unmaps (default: only counted)
           --keep-unmapped-textures  keep textures over memory the game unmapped that no view record names (default:
