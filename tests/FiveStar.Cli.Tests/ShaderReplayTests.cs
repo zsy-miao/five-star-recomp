@@ -26,6 +26,9 @@ public sealed class ShaderReplayTests : IDisposable
     private const uint ImageIndex = 12;
     private const uint FallbackTable = 2;
 
+    /// <summary>A console address for the buffers, which makes them ranges of game memory.</summary>
+    private const ulong ConsoleAddress = 0x2_0000_0000;
+
     private const string Program = """
         cbuffer UserData : register(b0) { uint4 user[32]; };
 
@@ -56,6 +59,19 @@ public sealed class ShaderReplayTests : IDisposable
         var report = ReplayCommand.Replay(device, folder, capture, ReplayCandidate.Captured(folder, capture), runs: 3, tolerance: null, shown: 4);
 
         Assert.Equal(3, report.Outcome.Milliseconds.Count);
+        Assert.Equal(3, report.Differences.Count);
+        Assert.All(report.Differences, difference => Assert.True(difference.Same, $"{difference.Resource}: {difference.Differing} dwords differ"));
+    }
+
+    /// <summary><c>--game-memory system</c>: the ranges of game memory in imported system memory replay the same writes.</summary>
+    [DxcFact]
+    public void Game_memory_in_imported_system_memory_replays_bit_exact_on_warp()
+    {
+        using var device = GpuDevice.CreateWarp(debugLayer: false);
+        var (folder, capture) = WriteCapture(device, ConsoleAddress);
+
+        var report = ReplayCommand.Replay(device, folder, capture, ReplayCandidate.Captured(folder, capture), runs: 1, tolerance: null, shown: 4, importGameMemory: true);
+
         Assert.Equal(3, report.Differences.Count);
         Assert.All(report.Differences, difference => Assert.True(difference.Same, $"{difference.Resource}: {difference.Differing} dwords differ"));
     }
@@ -117,7 +133,7 @@ public sealed class ShaderReplayTests : IDisposable
     }
 
     /// <summary>The capture of one 4-group dispatch: inputs, the outputs the CPU expects, the views and the compiled program.</summary>
-    private (CaptureFolder Folder, DispatchCapture Capture) WriteCapture(GpuDevice device)
+    private (CaptureFolder Folder, DispatchCapture Capture) WriteCapture(GpuDevice device, ulong? consoleAddress = null)
     {
         var folder = new CaptureFolder(_folder);
         var writer = new CaptureWriter(folder);
@@ -125,8 +141,8 @@ public sealed class ShaderReplayTests : IDisposable
         var expected = input.Select((value, index) => (value * Multiplier) + (uint)index).ToArray();
         var inputBytes = MemoryMarshal.AsBytes(input.AsSpan());
 
-        writer.Add(BufferShape("input", inputBytes.Length), inputBytes, inputBytes);
-        writer.Add(BufferShape("output", inputBytes.Length), [], MemoryMarshal.AsBytes(expected.AsSpan()));
+        writer.Add(BufferShape("input", inputBytes.Length) with { ConsoleAddress = consoleAddress }, inputBytes, inputBytes);
+        writer.Add(BufferShape("output", inputBytes.Length) with { ConsoleAddress = consoleAddress }, [], MemoryMarshal.AsBytes(expected.AsSpan()));
         AddImage(device, writer, expected);
         writer.View(InputIndex, CapturedViewKind.ShaderResource, "input", Bytes(RawRead(Threads)));
         writer.View(OutputIndex, CapturedViewKind.UnorderedAccess, "output", Bytes(RawWrite(Threads)));

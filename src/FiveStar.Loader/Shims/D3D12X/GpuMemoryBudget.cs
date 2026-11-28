@@ -68,6 +68,12 @@ internal sealed class GpuMemoryBudget : IDisposable
         return TryRead(MemorySegmentGroup.NonLocal, out budget, out usage) && budget != 0;
     }
 
+    /// <summary>The local (video-memory) segment group's budget and the process's use of it; false when DXGI fails.</summary>
+    public bool TryReadLocal(out ulong budget, out ulong usage)
+    {
+        return TryRead(MemorySegmentGroup.Local, out budget, out usage) && budget != 0;
+    }
+
     /// <summary>Both segment groups, for the log.</summary>
     public string Describe()
     {

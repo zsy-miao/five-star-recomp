@@ -676,6 +676,34 @@ internal sealed class CommandLineParser
         return true;
     }
 
+    private bool SetVideoMemory(string option)
+    {
+        if (option == "--gpu-upload-heaps")
+        {
+            _options.GpuUploadHeaps = true;
+        }
+        else
+        {
+            string[] parts = Next().Split(',');
+            _options.VramTwinPresents = int.Parse(parts[0], CultureInfo.InvariantCulture);
+
+            // After the interval: "pool" and a budget in MiB, in any order.
+            foreach (string part in parts.Skip(1))
+            {
+                if (part == "pool")
+                {
+                    _options.VramTwinPoolOnly = true;
+                }
+                else
+                {
+                    _options.VramTwinMebibytes = int.Parse(part, CultureInfo.InvariantCulture);
+                }
+            }
+        }
+
+        return true;
+    }
+
     /// <summary>The memory map and the memory limits.</summary>
     private bool ApplyMemory(string option)
     {
@@ -839,10 +867,8 @@ internal sealed class CommandLineParser
     {
         switch (option)
         {
-            case "--gpu-upload-heaps":
-                _options.GpuUploadHeaps = true;
-
-                return true;
+            case "--gpu-upload-heaps" or "--vram-twin-ceiling":
+                return SetVideoMemory(option);
             case "--mesh-launch":
                 _options.MeshLaunch = true;
 

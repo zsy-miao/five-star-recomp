@@ -19,11 +19,11 @@ namespace FiveStar.Loader.Shims.D3D12X.Binding;
 internal static unsafe class UavFill
 {
     private const string Source = """
-        #define RS "RootConstants(num32BitConstants=11, b0), UAV(u0, space=0), " \
+        #define RS "RootConstants(num32BitConstants=12, b0), UAV(u0, space=0), " \
             "DescriptorTable(UAV(u0, space=1, numDescriptors=unbounded)), DescriptorTable(UAV(u0, space=2, numDescriptors=unbounded)), " \
             "DescriptorTable(UAV(u0, space=3, numDescriptors=unbounded)), DescriptorTable(UAV(u0, space=4, numDescriptors=unbounded)), " \
             "DescriptorTable(UAV(u0, space=5, numDescriptors=unbounded)), DescriptorTable(UAV(u0, space=6, numDescriptors=unbounded))"
-        cbuffer Fill : register(b0) { uint index; uint kind; uint width; uint height; uint value; float red; float green; float blue; float share; float least; float tint; };
+        cbuffer Fill : register(b0) { uint index; uint kind; uint width; uint height; uint value; float red; float green; float blue; float share; float least; float tint; uint other; };
         RWStructuredBuffer<float4> level : register(u0, space0);
         RWTexture2D<float4> floats2[] : register(u0, space1);
         RWTexture2D<uint> uints2[] : register(u0, space2);
@@ -61,6 +61,10 @@ internal static unsafe class UavFill
                 return;
             }
             if (id.x >= width || id.y >= height) return;
+            if (kind == 7u) {
+                if (uints2[index][id.xy] == value) uints2[index][id.xy] = other;
+                return;
+            }
             float4 colour = float4(red, green, blue, 1.0f);
             uint packed = value;
             if (share > 0.0f) {
@@ -82,11 +86,14 @@ internal static unsafe class UavFill
     private const uint LevelParameter = 1;
     private const uint FirstTable = 2;
     private const uint Tables = 6;
-    private const uint Constants = 11;
+    private const uint Constants = 12;
     private const uint GroupSide = 8;
 
     /// <summary>The program's kind that measures a float view instead of writing one.</summary>
     private const uint MeasureKind = 6;
+
+    /// <summary>The program's kind that replaces one value of a 2D uint view by another and leaves the rest.</summary>
+    private const uint ReplaceKind = 7;
 
     /// <summary>The measured level's buffer: one float4, in a buffer of the smallest size the desktop makes.</summary>
     private const ulong LevelBytes = 256;
@@ -181,6 +188,23 @@ internal static unsafe class UavFill
         return true;
     }
 
+    /// <summary>
+    /// Records, over the 2D uint UAV at <paramref name="index"/>, the replacement of every texel that holds
+    /// <paramref name="match"/> by <paramref name="replacement"/>; the other texels stay. False when the view is not a 2D uint one.
+    /// </summary>
+    public static bool Replace(nint device, nint list, ulong heapStart, uint index, UavView view, uint match, uint replacement)
+    {
+        if (Kind(view) != 1 || !Ready(device))
+        {
+            return false;
+        }
+
+        Bind(list, heapStart, index, ReplaceKind, view, new FillValue(0, 0, 0, match, Other: replacement));
+        ((delegate* unmanaged<nint, uint, uint, uint, void>)ComObject.Slot(list, DispatchSlot))(list, (view.Width + GroupSide - 1) / GroupSide, (view.Height + GroupSide - 1) / GroupSide, 1);
+
+        return true;
+    }
+
     /// <summary>Sets the program, its tables over the heap at <paramref name="heapStart"/>, the level's buffer and its constants.</summary>
     private static void Bind(nint list, ulong heapStart, uint index, uint kind, UavView view, FillValue fill)
     {
@@ -193,12 +217,12 @@ internal static unsafe class UavFill
             ((delegate* unmanaged<nint, uint, ulong, void>)ComObject.Slot(list, SetTableSlot))(list, table, heapStart);
         }
 
-        // The program's cbuffer: index, kind, width, height, the uint value, the colour, then the share, the least and the tint.
+        // The program's cbuffer: index, kind, width, height, the uint value, the colour, the share, the least and the tint, then the replacement.
         uint* constants = stackalloc uint[]
         {
             index, kind, view.Width, view.Height, fill.Packed,
             BitConverter.SingleToUInt32Bits(fill.Red), BitConverter.SingleToUInt32Bits(fill.Green), BitConverter.SingleToUInt32Bits(fill.Blue),
-            BitConverter.SingleToUInt32Bits(fill.Share), BitConverter.SingleToUInt32Bits(fill.Least), BitConverter.SingleToUInt32Bits(fill.Tint),
+            BitConverter.SingleToUInt32Bits(fill.Share), BitConverter.SingleToUInt32Bits(fill.Least), BitConverter.SingleToUInt32Bits(fill.Tint), fill.Other,
         };
         ((delegate* unmanaged<nint, uint, uint, uint*, uint, void>)ComObject.Slot(list, SetConstantsSlot))(list, ConstantsParameter, Constants, constants, 0);
     }

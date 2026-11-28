@@ -25,13 +25,19 @@ public sealed class DispatchReplay
         _device = device;
     }
 
+    /// <summary>
+    /// The captured ranges of game memory in imported system memory, as the loader gives them to the GPU, instead of
+    /// video memory: the two times tell what a program pays for where game memory lives.
+    /// </summary>
+    public bool ImportGameMemory { get; init; }
+
     /// <summary>Runs the dispatch <paramref name="runs"/> times with <paramref name="dxil"/>; the first run's outputs and every run's time.</summary>
     public ReplayOutcome Run(CaptureFolder folder, DispatchCapture capture, byte[] dxil, int runs)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(runs, 1);
 
         using var queue = new ReplayQueue(_device);
-        using var bindings = new ReplayBindings(_device, folder, capture);
+        using var bindings = new ReplayBindings(_device, folder, capture, ImportGameMemory);
         using var root = _device.CreateRootSignature(BindlessRootSignature.Description(capture.UserConstants));
         using var pipeline = _device.CreateComputePipelineState<ID3D12PipelineState>(new ComputePipelineStateDescription { RootSignature = root, ComputeShader = dxil });
         using var queries = _device.CreateQueryHeap<ID3D12QueryHeap>(new QueryHeapDescription(QueryHeapType.Timestamp, (uint)(runs * QueriesPerRun)));

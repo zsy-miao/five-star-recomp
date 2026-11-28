@@ -343,6 +343,15 @@ internal sealed record HostOptions
     /// <summary>The descriptor window, the address map and the user-data ring in GPU upload heaps where the device has them (<c>--gpu-upload-heaps</c>).</summary>
     public bool GpuUploadHeaps { get; set; }
 
+    /// <summary>Programs read game memory from video-memory twins copied every so many presents, a measurement (<c>--vram-twin-ceiling</c>); 0: off.</summary>
+    public int VramTwinPresents { get; set; }
+
+    /// <summary>Only the streaming pool's windows get twins (<c>--vram-twin-ceiling N,pool</c>).</summary>
+    public bool VramTwinPoolOnly { get; set; }
+
+    /// <summary>Video memory the twins may take, in MiB (<c>--vram-twin-ceiling N,pool,MiB</c>); 0: the default.</summary>
+    public int VramTwinMebibytes { get; set; }
+
     /// <summary>The frame interval the frame events keep (<c>--frame-rate</c>); the game's own by default.</summary>
     public Shims.D3D12X.Present.FrameRate FrameRate { get; set; }
 
