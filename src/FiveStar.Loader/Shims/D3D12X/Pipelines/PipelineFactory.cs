@@ -187,7 +187,7 @@ internal sealed unsafe class PipelineFactory
         }
 
         InFlight.Describe(recipe.Names);
-        Action<nint> built = pipeline => _rectangles?.Remember(pipeline, recipe.Desktop!, recipe.Programs);
+        Action<nint> built = pipeline => NoteBuilt(pipeline, recipe);
         var small = recipe.Stream.ShaderBytes <= SmallGraphicsShaderBytes;
         var hr = Create(recipe.Stream, iid, result, recipe.Names, built, deferral, small, GraphicsAgain(description, *iid));
 
@@ -681,15 +681,27 @@ internal sealed unsafe class PipelineFactory
         Action<nint> built = pipeline =>
         {
             QueueProgress.Name(pipeline, recipe.Names);
-
-            if (recipe.Desktop is not null)
-            {
-                _rectangles?.Remember(pipeline, recipe.Desktop, recipe.Programs);
-                ClassDepthBounds.Built(pipeline, recipe.Desktop.DepthStencil);
-            }
+            NoteBuilt(pipeline, recipe);
         };
 
         return new PendingBuild(() => Build(stream, iid, recipe.Names), stream.ShaderBytes >= HeavyShaderBytes, recipe.Names, built, stream.ShaderBytes);
+    }
+
+    /// <summary>
+    /// A built graphics pipeline's rectangle-list variants and its class-test bounds (<see cref="ClassDepthBounds"/>),
+    /// whether it was built at once, loaded from the cache or built later. Unmarked, a pipeline built at once kept
+    /// GREATER_EQUAL without the bounds floor and passed every lower class: the additive SSS resolve lit whole 128-pixel
+    /// tiles of class-0 walls (w385, w421).
+    /// </summary>
+    private void NoteBuilt(nint pipeline, PipelineRecipe recipe)
+    {
+        if (recipe.Desktop is null)
+        {
+            return;
+        }
+
+        _rectangles?.Remember(pipeline, recipe.Desktop, recipe.Programs);
+        ClassDepthBounds.Built(pipeline, recipe.Desktop.DepthStencil);
     }
 
     /// <summary>
