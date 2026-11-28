@@ -46,7 +46,7 @@ GTA VI does not run yet. Updated 27 November 2026.
 | Character depth pass (LinearDepthSkin) too slow to run | held; it costs ~800 ms GPU a frame when let through |
 | GPU writes to game memory in system RAM are slow | video-memory copies; a finer address map |
 | Dark bands on sunlit ground | tiles the game hands to ray-traced sun shadows read "in shadow"; make them use the cascade shadows |
-| Grey-white translucent blocks over parts of the frame | not traced yet |
+| Orange streaks through hair; magenta lines on the ground | not traced yet |
 | Ray tracing | not built; those passes are held and stand-ins fill some outputs |
 ![Progress](progress.svg)
 
