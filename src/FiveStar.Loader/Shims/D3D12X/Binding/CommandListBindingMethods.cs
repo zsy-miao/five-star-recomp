@@ -580,6 +580,7 @@ internal static unsafe class CommandListBindingMethods
         {
             TimeIndirect(self, call.Kind);
             Shapes(self, call, 0, 0);
+            BindRectangles(self, call.Kind);
             Execute(self->Inner, signature, call.MaxCount, gathered, slot, 0, 0);
 
             return;
@@ -606,7 +607,23 @@ internal static unsafe class CommandListBindingMethods
 
         TimeIndirect(self, call.Kind);
         Shapes(self, call, 0, 0);
+        BindRectangles(self, call.Kind);
         Execute(self->Inner, signature, call.MaxCount, argumentBuffer, argumentOffset, countBuffer, countOffset);
+    }
+
+    /// <summary>
+    /// Before an indirect draw no clamp pass of its own came before: under the rectangle list, the pipeline's variant
+    /// (<see cref="RectangleDraws.BeforeDraw"/>), which a direct draw binds itself and a clamped one after the clamp
+    /// (<see cref="RestorePipeline"/>). Without it a pipeline the game set since was drawn as triangles, half of each
+    /// rectangle: the grid of half-tiles over w395's and w397's frames, where batched draws skipped it.
+    /// </summary>
+    [HotPath]
+    private static void BindRectangles(XboxObject* self, int kind)
+    {
+        if (kind == IndirectClamp.DrawKind || kind == IndirectClamp.DrawIndexedKind)
+        {
+            ShimContext.Runtime.D3D12X.Rectangles.BeforeDraw(self);
+        }
     }
 
     [HotPath]
@@ -648,6 +665,7 @@ internal static unsafe class CommandListBindingMethods
         else
         {
             TimeIndirect(self, call.Kind);
+            BindRectangles(self, call.Kind);
         }
 
         Shapes(self, call, 0, 0);
