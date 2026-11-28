@@ -331,8 +331,9 @@ internal static unsafe class DispatchCaptures
 
             try
             {
-                var capture = CaptureOutput.Write(job.Plan, job.Folder, new ReadOnlySpan<byte>(data, checked((int)job.Plan.ReadbackBytes)));
-                log.Info($"  [capture] {job.Plan.Pipeline} written to {job.Folder}: {capture.Dispatches.Count} dispatches, {capture.Resources.Count} resources, {capture.Notes.Count} notes");
+                var bytes = new ReadOnlySpan<byte>(data, checked((int)job.Plan.ReadbackBytes));
+                var capture = CaptureOutput.Write(job.Plan, job.Folder, bytes);
+                log.Info($"  [capture] {job.Plan.Pipeline} written to {job.Folder}: {capture.Dispatches.Count} dispatches, {capture.Resources.Count} resources, {capture.Notes.Count} notes; {Describe(job, bytes)}");
             }
             finally
             {
@@ -348,6 +349,25 @@ internal static unsafe class DispatchCaptures
         {
             Written.Add(job);
         }
+    }
+
+    /// <summary>
+    /// What the readback held and when it was read: the list's submission value at the capture and now, the value its
+    /// fence completed, and how many of the bytes are not zero (all zero means the copies had not run or read nothing).
+    /// </summary>
+    private static string Describe(DispatchCaptureJob job, ReadOnlySpan<byte> bytes)
+    {
+        var submission = ListSubmission.Of(job.List);
+        ulong completed = 0;
+
+        if (submission->Fence != 0)
+        {
+            completed = ((delegate* unmanaged<nint, ulong>)ComObject.Slot(submission->Fence, CompletedSlot))(submission->Fence);
+        }
+
+        long nonZero = bytes.Length - bytes.Count((byte)0);
+
+        return $"submission {job.Submitted} at the capture, {submission->Value} now, fence completed {completed}; {nonZero} of {bytes.Length} bytes read back not zero";
     }
 
     /// <summary>Readback buffers of written captures whose list was reset since (no execution can write them any more).</summary>
